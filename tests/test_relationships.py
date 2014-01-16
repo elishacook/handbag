@@ -1,0 +1,466 @@
+import unittest
+import os.path
+import shutil
+from handbag import environment
+from handbag.validators import *
+from handbag.relationships import *
+
+TEST_PATH = "/tmp/handbag-test.db"
+TEST_URL = "lmdb://%s" % TEST_PATH
+
+
+class TestRelationships(unittest.TestCase):
+    
+    def setUp(self):
+        if os.path.exists(TEST_PATH):
+            shutil.rmtree(TEST_PATH)
+        self.env = environment.open(TEST_URL)
+    
+    
+    def test_one(self):
+        class Foo(self.env.Model):
+            bar = One("Bar")
+            
+        class Bar(self.env.Model):
+            pass
+        
+        with self.env.write():
+            foo = Foo()
+            bar = Bar()
+            foo.bar = bar
+            self.assertEquals(foo.bar, bar)
+            
+        with self.env.read():
+            foo = Foo.get(foo.id)
+            self.assertEquals(foo.bar, bar)
+        
+      
+    def test_one_no_inverse(self):
+        with self.assertRaises(TypeError):
+            class Foo(self.env.Model):
+                bar = One("Bar", inverse="foo")
+                
+    
+    def test_one_to_one(self):
+        class Foo(self.env.Model):
+            bar = OneToOne("Bar", inverse="foo")
+            
+        class Bar(self.env.Model):
+            pass
+        
+        with self.env.write():
+            bar = Bar()
+            foo = Foo()
+            foo.bar = bar
+        
+        with self.env.read():
+            self.assertEquals(bar.foo, foo)
+        
+        
+    def test_one_to_one_overdefined(self):
+        class Foo(self.env.Model):
+            bar = OneToOne("Bar", inverse="foo")
+        
+        class Bar(self.env.Model):
+            foo = OneToOne(Foo, inverse="bar")
+        
+        with self.env.write():
+            bar = Bar()
+            foo = Foo()
+            foo.bar = bar
+        
+        with self.env.read():
+            self.assertEquals(bar.foo, foo)
+        
+
+    def test_one_to_one_cascade(self):
+        class Foo(self.env.Model):
+            bar = OneToOne("Bar", inverse="foo", cascade=True)
+        
+        class Bar(self.env.Model):
+            pass
+        
+        with self.env.write():
+            bar = Bar()
+            bar2 = Bar()
+            foo = Foo()
+            foo.bar = bar
+        
+        with self.env.read():
+            self.assertEquals(Bar.count(), 2)
+            
+        with self.env.write():
+            foo.remove()
+            
+        with self.env.read():
+            self.assertEquals(Bar.count(), 1)
+            b = Bar.cursor().first()
+            self.assertEquals(b, bar2)
+        
+        
+    def test_one_to_many(self):
+        data = {
+            'San Francisco': [
+                'Alchemist', 'Bar Tartine', 'Lounge 3411', 'Tempest'
+            ],
+            'New York': [
+                'Dead Rabbit', 'Death & Co.', 'Donna', 'Proletariat'
+            ]
+        }
+        
+        class City(self.env.Model):
+            name = Text()
+            bars = OneToMany("Bar", inverse="city")
+            indexes = ['name']
+        
+        class Bar(self.env.Model):
+            name = Text()
+            indexes = ['name']
+        
+        with self.env.write():
+            for city, bars in data.items():
+                c = City(name=city)
+                for bar in bars:
+                    b = Bar(name=bar)
+                    c.bars.add(b)
+        
+        with self.env.read():
+            city = City.indexes['name'].get('San Francisco')
+            self.assertEquals(city.bars.count(), 4)
+            self.assertEquals(sorted([b.name for b in city.bars]), data['San Francisco'])
+            
+            city = City.indexes['name'].get('New York')
+            self.assertEquals(city.bars.count(), 4)
+            self.assertEquals(sorted([b.name for b in city.bars]), data['New York'])
+            
+            bar = Bar.indexes['name'].get('Donna')
+            self.assertEquals(bar.city.name, 'New York')
+            self.assertEquals(bar.city, city)
+        
+        with self.env.write():
+            bar.remove()
+            
+        with self.env.read():
+            self.assertEquals(city.bars.count(), 3)
+            
+            b = city.bars.next()
+            name = b.name
+            self.assertIn(name, data['New York'])
+            
+        with self.env.write():
+            city.bars.remove(b)
+            
+        with self.env.read:
+            self.assertEquals(city.bars.count(), 2)
+            new_b = Bar.indexes['name'].get(name)
+            self.assertEquals(b, new_b)
+        
+"""
+    def test_one_to_many_overdefined(self):
+        data = {
+            'San Francisco': [
+                'Alchemist', 'Bar Tartine', 'Lounge 3411', 'Tempest'
+            ],
+            'New York': [
+                'Dead Rabbit', 'Death & Co.', 'Donna', 'Proletariat'
+            ]
+        }
+        
+        class City(self.env.Model):
+            name = Text()
+            bars = OneToMany("Bar", inverse="city")
+        
+        class Bar(self.env.Model):
+            name = Text()
+            city = ManyToOne(City, inverse="bars")
+        
+        with self.env.write():
+            for city, bars in data.items():
+                c = City(name=city)
+                for bar in bars:
+                    b = Bar(name=bar)
+                    c.bars.add(b)
+        
+        with self.env.read():
+            city = City.find_one({'name': 'San Francisco'})
+            self.assertEquals(city.bars.count(), 4)
+            self.assertEquals([b.name for b in city.bars.find().sort('name')], data['San Francisco'])
+            
+            city = City.find_one({'name': 'New York'})
+            self.assertEquals(city.bars.count(), 4)
+            self.assertEquals([b.name for b in city.bars.find().sort('name')], data['New York'])
+            
+            bar = Bar.find_one({'name':'Donna'})
+            self.assertEquals(bar.city.name, 'New York')
+            self.assertEquals(bar.city, city)
+        
+        with self.env.write():
+            bar.remove()
+            
+        with self.env.read():
+            self.assertEquals(city.bars.count(), 3)
+            
+            b = city.bars.next()
+            name = b.name
+            self.assertIn(name, data['New York'])
+            
+        with self.env.write():
+            city.bars.remove(b)
+            self.assertEquals(city.bars.count(), 2)
+            new_b = Bar.find_one({'name':name})
+            self.assertEquals(b, new_b)
+        
+        
+    def test_one_to_many_cascade(self):
+        class City(self.env.Model):
+            name = Text()
+            bars = OneToMany("Bar", inverse="city", cascade=True)
+        
+        class Bar(self.env.Model):
+            name = Text()
+        
+        with self.env.write():
+            city_a = City(name="Foo City")
+            city_b = City(name="Qux City")
+        
+            for i in range(0,10):
+                b = Bar(name="Bar a#%s" % str(i+1))
+                city_a.bars.add(b)
+                
+                b = Bar(name="Bar b#%s" % str(i+1))
+                city_b.bars.add(b)
+        
+        with self.env.read():
+            self.assertEquals(Bar.count(), 20)
+            
+        with self.env.write():
+            city_a.remove()
+            
+        with self.env.read():
+            self.assertEquals(Bar.count(), 10)
+            b = Bar.find().sort('name').next()
+            self.assertEquals(b.name, "Bar b#1")
+        
+        
+    def test_one_to_many_query(self):
+        class Foo(self.env.Model):
+            bars = OneToMany("Bar", inverse="foo")
+            
+        class Bar(self.env.Model):
+            number = TypeOf(int)
+            
+        with self.env.write():
+            foo = Foo()
+            
+        with self.env.read():
+            self.assertEquals(foo.bars.count(), 0)
+            self.assertEquals(foo.bars.count({'number':{'$gt':5}}), 0)
+        
+        with self.env.write():
+            for i in range(0, 20):
+                b = Bar(number=i)
+                b.foo = foo
+            
+            for i in range(0,10):
+                f = Foo()
+        
+        with self.env.read():
+            self.assertEquals(Foo.count(), 11)
+            self.assertEquals(Bar.count(), 20)
+            self.assertEquals(foo.bars.count(), 20)
+            self.assertEquals(foo.bars.count({'number':{'$gt':5}}), 14)
+        
+        with self.env.write():
+            for i in range(0,10):
+                b = Bar(number=100 + i)
+        
+        with self.env.read():
+            self.assertEquals(Bar.count(), 30)
+            self.assertEquals(foo.bars.count(), 20)
+        
+            all_bars = list(Bar.find({'number':{'$lt':5}}))
+            foo_bars = list(foo.bars.find({'number':{'$lt':5}}))
+            self.assertEquals(foo_bars, all_bars)
+        
+        
+    def test_many_to_many(self, storage_policy):
+        tags_by_doc = {
+            "foo": ["tofu", "seitan"],
+            "bar": ["seitan"],
+            "baz": ["tempeh", "tofu"],
+            "qux": ["seitan", "tofu"],
+            "goo": ["seitan"]
+        }
+        docs_by_tag = {}
+        
+        class Document(self.env.Model):
+            content = Text()
+            tags = ManyToMany("Tag", inverse="documents")
+            
+        class Tag(self.env.Model):
+            name = Text()
+        
+        tags = {}
+        docs = {}
+        
+        with self.env.write():
+            for content, tag_names in tags_by_doc.items():
+                doc = Document(content=content)
+                docs[content] = doc
+                
+                for n in tag_names:
+                    if n not in tags:
+                        tag = Tag(name=n)
+                        tags[n] = tag
+                    doc.tags.add(tags[n])
+                    if n not in docs_by_tag:
+                        docs_by_tag[n] = []
+                    docs_by_tag[n].append(content)
+        
+        for d in [tags_by_doc, docs_by_tag]:
+            for k in d:
+                d[k].sort()
+        
+        with self.env.read():
+            for k,v in tags_by_doc.items():
+                doc = Document.find_one({'content':k})
+                self.assertEquals([tag.name for tag in doc.tags.find().sort('name')], v)
+                
+            for k,v in docs_by_tag.items():
+                tag = Tag.find_one({'name':k})
+                self.assertEquals([doc.content for doc in tag.documents.find().sort('content')], v)
+        
+            tag = Tag.find_one({'name':'seitan'})
+            self.assertEquals(tag.documents.count(), 4)
+            doc = tag.documents.next()
+            self.assertIn('seitan', [tag.name for tag in doc.tags])
+            num_doc_tags = doc.tags.count()
+            
+        with self.env.write():
+            tag.documents.remove(doc)
+            
+        with self.env.read():
+            self.assertEquals(tag.documents.count(), 3)
+            self.assertEquals(doc.tags.count(), num_doc_tags-1)
+            
+            doc = Document.find_one({'content':'baz'})
+            self.assertEquals(doc.tags.count({'name':'tofu'}), 1)
+        
+        
+    def test_many_to_many_cascade(self):
+        class Foo(self.env.Model):
+            bars = ManyToMany("Bar", inverse="foos", cascade=True)
+            
+        class Bar(self.env.Model):
+            pass
+        
+        foos = []
+        
+        with self.env.write():
+            for i in range(0,3):
+                f = Foo()
+                for i in range(0,10):
+                    b = Bar()
+                    f.bars.add(b)
+                foos.append(f)
+        
+        with self.env.read():
+            self.assertEquals(Bar.count(), 30)
+        
+            for foo in foos:
+                self.assertEquals(foo.bars.count(), 10)
+        
+        with self.env.write():
+            foos[0].remove()
+        
+        with self.env.read():
+            self.assertEquals(Bar.count(), 20)
+            
+            for foo in foos[1:]:
+                self.assertEquals(foo.bars.count(), 10)
+            
+            
+    def test_class_remove_cascade(self):
+        class Foo(self.env.Model):
+            number = TypeOf(int)
+            bars = OneToMany("Bar", inverse="foo", cascade=True)
+            
+        class Bar(self.env.Model):
+            number = TypeOf(int)
+            
+        with self.env.write():
+            for i in range(0,5):
+                f = Foo()
+                f.number = i
+                
+                for j in range(0,10):
+                    b = Bar()
+                    b.number = j
+                    f.bars.add(b)
+        
+        with self.env.read():
+            self.assertEquals(Foo.count(), 5)
+            self.assertEquals(Bar.count(), 50)
+        
+        with self.env.write():
+            Foo.remove({'number': 4})
+        
+        with self.env.read():
+            self.assertEquals(Foo.count(), 4)
+            self.assertEquals(Bar.count(), 40)
+        
+        
+    def test_redefine_backreference_fails(self):
+        class Foo(self.env.Model):
+            pass
+            
+        class Bar(self.env.Model):
+            foos = ManyToOne(Foo, inverse="bars")
+        
+        with self.assertRaises(AssertionError):
+            class Baz(self.env.Model):
+                foos = ManyToOne(Foo, inverse="bars")
+        
+        class Qux(self.env.Model):
+            qugs = OneToMany("Qug", inverse="zzz")
+        
+        with self.assertRaises(AssertionError):    
+            class Quv(self.env.Model):
+                qugs = OneToMany("Qug", inverse="zzz")
+                
+                
+    def test_invalid_inverse_fails(self):
+        class Foo(self.env.Model):
+            bar = OneToOne("Bar", inverse="foo")
+        
+        with self.assertRaises(TypeError):
+            class Bar(self.env.Model):
+                foo = OneToMany(Foo)
+                
+                
+    def test_remove_with_spec(self):
+        class Foo(self.env.Model):
+            bars = OneToMany("Bar")
+            
+        class Bar(self.env.Model):
+            number = TypeOf(int)
+            
+        with self.env.write():
+            foo = Foo()
+            
+            for i in range(0,10):
+                b = Bar(number=i)
+                foo.bars.add(b)
+        
+        with self.env.read():
+            self.assertEquals(foo.bars.count(), 10)
+        
+        with self.env.write():
+            foo.bars.remove({'number':{'$lt':5}})
+            
+        with self.env.read():
+            self.assertEquals(foo.bars.count(), 5)
+"""        
+        
+if __name__ == "__main__":
+    unittest.main()

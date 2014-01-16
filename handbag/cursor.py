@@ -31,7 +31,7 @@ class Cursor(object):
         return self.get_iterator('all')
         
         
-    def range(self, start, end):
+    def range(self, start=None, end=None):
         if start is None and end is None:
             return self.__iter__()
             
@@ -50,6 +50,22 @@ class Cursor(object):
         return self.get_iterator('match_key', self.dump_key(key))
         
         
+    def count_range(self, start=None, end=None):
+        return self.get_count_iterator(
+            'range',
+            start if start is None else self.dump_key(start),
+            end if end is None else self.dump_key(end)
+        )
+        
+        
+    def count_prefix(self, prefix):
+        return self.get_count_iterator('match_prefix', self.dump_key(prefix))
+        
+        
+    def count_key(self, key):
+        return self.get_count_iterator('match_key', self.dump_key(key))
+        
+        
     def dump_key(self, key):
         return dson.dumpone(key)
         
@@ -63,6 +79,15 @@ class Cursor(object):
         iterator = backward if self.reverse else forward
         for k,v in iterator(self._create_cursor(), *args):
             yield self.load(v)
+            
+            
+    def get_count_with_iterator(self, name, *args):
+        forward, backward = iterators.get(name)
+        iterator = backward if self.reverse else forward
+        c = 0
+        for r in iterator(self._create_cursor(), *args):
+            c += 1
+        return c
         
         
     def _create_cursor(self):

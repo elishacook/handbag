@@ -8,7 +8,7 @@ TEST_PATH = "/tmp/handbag-test.db"
 TEST_URL = "lmdb://%s" % TEST_PATH
 
 
-class TestTable(unittest.TestCase):
+class TestIndex(unittest.TestCase):
     
     def setUp(self):
         if os.path.exists(TEST_PATH):
@@ -120,3 +120,16 @@ class TestTable(unittest.TestCase):
             cur = foos.indexes['skidoo'].cursor()
             results = list(cur.range({'skidoo':5}, {'skidoo':13}))
             self.assertEqual(results, foo_list[5:13])
+            
+            
+    def test_count(self):
+        foos = self.db.foos
+        foos.indexes.add('skidoo')
+        
+        with self.db.write():
+            for i in range(0,20):
+                foos.save({'skidoo':i})
+                
+        with self.db.read():
+            self.assertEqual(foos.indexes['skidoo'].count(), 20)
+            

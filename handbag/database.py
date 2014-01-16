@@ -36,7 +36,6 @@ class Database(object):
         return self.tables[name]
         
         
-        
 class DatabaseContext(object):
     
     def __init__(self, dbm, writable=False):

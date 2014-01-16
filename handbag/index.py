@@ -84,6 +84,9 @@ class Index(object):
                 doc_value = self.dbm.get(self.table_name, value)
                 if doc_value:
                     return dson.loads(doc_value)
+    
+    def all(self, key):
+        return self.get(key, duplicates=True)
         
         
     def remove(self, doc):
@@ -94,6 +97,10 @@ class Index(object):
         
     def cursor(self, reverse=False):
         return IndexCursor(self, reverse)
+        
+        
+    def count(self):
+        return self.dbm.count(self.name)
         
         
     def make_keys(self, doc):
@@ -123,11 +130,14 @@ class Index(object):
         
         
     def get_key(self, doc):
-        key = ''
-        for f in self.fields:
-            assert f in doc, "Missing value for field '%s' in index %s" % (f, str(self.fields))
-            key += dson.dumpone(doc[f])
-        return key
+        if isinstance(doc, dict):
+            key = ''
+            for f in self.fields:
+                assert f in doc, "Missing value for field '%s' in index %s" % (f, str(self.fields))
+                key += dson.dumpone(doc[f])
+            return key
+        else:
+            return dson.dumpone(doc)
         
         
         

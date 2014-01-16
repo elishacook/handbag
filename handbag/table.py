@@ -2,7 +2,6 @@ import dson
 import cursor
 import uniqueid
 import index
-from query import Query
 
 
 class Table(object):
@@ -15,6 +14,7 @@ class Table(object):
         
         
     def save(self, doc):
+        assert self.dbm.is_transaction_writable(), "Transaction is read-only"
         if 'id' in doc:
             old_doc = self.get(doc['id'])
         else:
@@ -28,6 +28,7 @@ class Table(object):
         
         
     def remove(self, id):
+        assert self.dbm.is_transaction_writable(), "Transaction is read-only"
         doc = self.get(id)
         self.indexes.remove(doc)
         key = dson.dumpone(id)
@@ -50,16 +51,4 @@ class Table(object):
             
     def cursor(self, reverse=False):
         return cursor.Cursor(self.dbm, self.name, reverse=reverse)
-        
-        
-    def find_one(self, query):
-        q = Query(self, query)
-        try:
-            return q.next()
-        except StopIteration:
-            return None
-        
-        
-    def find(self, query):
-        return Query(self, query)
         

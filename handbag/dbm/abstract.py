@@ -20,6 +20,10 @@ class AbstractDBM(object):
         raise NotImplementedError
         
         
+    def is_transaction_writable(self):
+        raise NotImplementedError
+        
+        
     def put(self, namespace, key, value):
         raise NotImplementedError
         

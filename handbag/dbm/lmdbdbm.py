@@ -21,22 +21,29 @@ class LMDBDBM(AbstractDBM):
     
     def transaction_start(self, writable=False):
         if len(self._local.transactions) > 0:
-            parent = self._local.transactions[-1]
+            parent = self._local.transactions[-1][1]
         else:
             parent = None
         txn = lmdb.Transaction(self._get_env(), write=writable, parent=parent)
-        self._local.transactions.append(txn)
+        self._local.transactions.append((writable, txn))
         return txn
         
         
     def transaction_commit(self):
-        txn = self._local.transactions.pop()
+        self._require_transaction()
+        txn = self._local.transactions.pop()[1]
         txn.commit()
         
         
     def transaction_abort(self):
-        txn = self._local.transactions.pop()
+        self._require_transaction()
+        txn = self._local.transactions.pop()[1]
         txn.abort()
+        
+        
+    def is_transaction_writable(self):
+        self._require_transaction()
+        return self._local.transactions[-1][0]
         
         
     def put(self, namespace, key, value):
@@ -74,8 +81,12 @@ class LMDBDBM(AbstractDBM):
         
         
     def _current_transaction(self):
+        self._require_transaction()
+        return self._local.transactions[-1][1]
+        
+        
+    def _require_transaction(self):
         assert len(self._local.transactions) > 0, "An active transaction is required"
-        return self._local.transactions[-1]
         
         
     def _get_env(self):
