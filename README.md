@@ -2,9 +2,9 @@
 
 **NOTE** This is pre-alpha software, i.e., cool your jets, lots of stuff is not implemented. If you like the concept, consider helping out by checking out what *is* implemented, suggesting ideas, writing code or just sending a nice note to keep me motivated. Thanks!
 
-Hnadbag is an embedded database for python. Its goal is to be a viable persistence option for small-to-medium sized projects and also to be super fun to use. This is not the DB for giganto-scale applications, but if you want data persistence, consistency and convenience this might be the thing for you.
+Handbag is an embedded database for python. Its goal is to be a viable persistence option for small-to-medium sized projects and also to be super fun to use. This is not the DB for giganto-scale applications, but if you want data persistence, consistency and convenience this might be the thing for you.
 
-Hnadbag uses [lmdb](http://symas.com/mdb/) (also [py-lmdb](https://github.com/dw/py-lmdb)) so it inherits all of its excellent qualities. When you use Hnadbag you get:
+Handbag uses [lmdb](http://symas.com/mdb/) (also [py-lmdb](https://github.com/dw/py-lmdb)) so it inherits all of its excellent qualities. When you use Handbag you get:
 
 * Multi-thread and multi-process concurrency
 * ACID guarantees
@@ -51,7 +51,7 @@ with env.read():
     assert list(foo.bars)[0] == bar
     
     # We can also look up by indexed fields ... 
-    foo2 = Foo.indexes.name.get("Foo Boringface")
+    foo2 = Foo.indexes['name'].get("Foo Boringface")
     assert foo2 == foo
 
 # Let's add some more foos
@@ -63,6 +63,6 @@ with env.write():
 # Indexes also support range lookup
 
 with env.read():
-    assert Foo.indexes.name.cursor().range('Th').count() == 10
+    assert Foo.indexes['name'].cursor().range('Th').count() == 10
     
 ```
