@@ -43,7 +43,7 @@ class Cursor(object):
         
         
     def prefix(self, prefix):
-        return self.get_iterator('match_prefix', self.dump_key(prefix))
+        return self.get_iterator('match_prefix', self.dump_prefix(prefix))
         
         
     def key(self, key):
@@ -51,7 +51,7 @@ class Cursor(object):
         
         
     def count_range(self, start=None, end=None):
-        return self.get_count_iterator(
+        return self.get_count_with_iterator(
             'range',
             start if start is None else self.dump_key(start),
             end if end is None else self.dump_key(end)
@@ -59,15 +59,19 @@ class Cursor(object):
         
         
     def count_prefix(self, prefix):
-        return self.get_count_iterator('match_prefix', self.dump_key(prefix))
+        return self.get_count_with_iterator('match_prefix', self.dump_key(prefix))
         
         
     def count_key(self, key):
-        return self.get_count_iterator('match_key', self.dump_key(key))
+        return self.get_count_with_iterator('match_key', self.dump_key(key))
         
         
     def dump_key(self, key):
         return dson.dumpone(key)
+        
+        
+    def dump_prefix(self, prefix):
+        return self.dump_key(prefix)
         
         
     def load(self, data):

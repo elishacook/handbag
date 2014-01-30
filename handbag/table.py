@@ -35,10 +35,14 @@ class Table(object):
         self.dbm.delete(self.name, key)
         
         
+    def remove_all(self):
+        assert self.dbm.is_transaction_writable(), "Transaction is read-only"
+        self.dbm.delete_all(self.name)
+        
+        
     def get(self, id):
         key = dson.dumpone(id)
         value = self.dbm.get(self.name, key)
-        
         if value is None:
             return None
         else:

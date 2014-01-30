@@ -8,7 +8,7 @@ class AbstractDBM(object):
         raise NotImplementedError
         
     
-    def transaction_start(self):
+    def transaction_start(self, writable=False):
         raise NotImplementedError
         
         
@@ -32,6 +32,10 @@ class AbstractDBM(object):
         raise NotImplementedError
         
         
+    def delete_all(self, namespace):
+        raise NotImplementedError
+        
+        
     def get(self, namespace, key):
         raise NotImplementedError
         
@@ -41,6 +45,10 @@ class AbstractDBM(object):
         
         
     def count(self, namespace):
+        raise NotImplementedError
+        
+        
+    def close(self):
         raise NotImplementedError
         
         

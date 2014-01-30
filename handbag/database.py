@@ -12,13 +12,16 @@ class Database(object):
     def __init__(self, dbm):
         self.dbm = dbm
         self.tables = {}
+        self.indexes_synced = False
         
         
     def read(self):
+        self.ensure_indexes_synced()
         return DatabaseContext(self.dbm)
         
         
     def write(self):
+        self.ensure_indexes_synced()
         return DatabaseContext(self.dbm, writable=True)
         
         
@@ -34,6 +37,18 @@ class Database(object):
         if name not in self.tables:
             self.tables[name] = Table(self.dbm, name)
         return self.tables[name]
+        
+        
+    def close(self):
+        self.dbm.close()
+        
+    def ensure_indexes_synced(self):
+        if self.indexes_synced:
+            return
+        self.indexes_synced = True
+        
+        for table in self.tables.values():
+            table.indexes.sync()
         
         
 class DatabaseContext(object):

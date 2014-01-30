@@ -24,11 +24,6 @@ class Environment(object):
         self.models[model.__name__] = model
         
         
-    def watch_for_changes(self, inst):
-        self.instances.add(inst)
-        self.current_context().watch(inst)
-        
-        
     def generate_id(self):
         return uniqueid.create()
         
@@ -54,8 +49,8 @@ class EnvironmentContext(object):
     def __init__(self, env, writable=False):
         self.env = env
         self.writable = writable
-        self.watch_list = {}
-        self.max_watch_list_size = 20
+        self.queue = {}
+        self.max_queue_size = 20
         
         if writable:
             self.db_context = self.env.db.write()
@@ -78,19 +73,18 @@ class EnvironmentContext(object):
             self.db_context.__exit__(type, value, traceback)
         
         
-    def watch(self, inst):
+    def enqueue(self, inst):
         if inst.is_dirty():
             assert self.writable, "Transaction is read-only"
-        if inst.id not in self.watch_list and \
-            len(self.watch_list) > self.max_watch_list_size:
-            self.flush()
-            
-        self.watch_list[inst.id] = inst
+        if inst.id not in self.queue:
+            if len(self.queue) > self.max_queue_size:
+                self.flush()
+            self.queue[inst.id] = inst
         
         
     def flush(self):
-        if len(self.watch_list) > 0:
+        if len(self.queue) > 0:
             assert self.writable, "Transaction is read-only"
-            for inst in self.watch_list.values():
+            for inst in self.queue.values():
                 inst.save()
                 

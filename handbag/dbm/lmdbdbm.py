@@ -14,9 +14,10 @@ class LMDBDBM(AbstractDBM):
         
     def add_namespace(self, namespace, duplicate_keys=False):
         assert self._env is None, "Can't add a namespace after the environment has been opened"
-        self._dbs[namespace] = {
-            'duplicate_keys': duplicate_keys
-        }
+        if namespace not in self._dbs:
+            self._dbs[namespace] = {
+                'duplicate_keys': duplicate_keys
+            }
         
     
     def transaction_start(self, writable=False):
@@ -60,6 +61,12 @@ class LMDBDBM(AbstractDBM):
         txn.delete(key, value=value, db=db)
         
         
+    def delete_all(self, namespace):
+        db = self._dbs[namespace]
+        txn = self._current_transaction()
+        txn.drop(db, delete=False)
+        
+        
     def get(self, namespace, key):
         db = self._dbs[namespace]
         txn = self._current_transaction()
@@ -78,6 +85,11 @@ class LMDBDBM(AbstractDBM):
         db = self._dbs[namespace]
         txn = self._current_transaction()
         return txn.stat(db)['entries']
+        
+        
+    def close(self):
+        if self._env:
+            self._env.close()
         
         
     def _current_transaction(self):

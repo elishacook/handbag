@@ -133,3 +133,39 @@ class TestIndex(unittest.TestCase):
         with self.db.read():
             self.assertEqual(foos.indexes['skidoo'].count(), 20)
             
+            
+    def test_sync(self):
+        foos = self.db.foos
+        foos.indexes.add('skidoo')
+        
+        with self.db.write():
+            for i in range(0,20):
+                foos.save({'skidoo':i})
+        
+        self.db.close()
+        self.db = database.open(TEST_URL)
+        foos = self.db.foos
+        foos.indexes.add('skidoo')
+        
+        with self.db.read():
+            self.assertEqual(foos.indexes['skidoo'].count(), 20)
+            
+            
+    def test_fn_keys(self):
+        def gen_keys(doc):
+            if 'skidoo' in doc:
+                return [doc['skidoo'] * 100]
+            else:
+                return []
+            
+        foos = self.db.foos
+        foos.indexes.add(('times-one-hundred', gen_keys))
+        
+        with self.db.write():
+            for i in range(1,21):
+                foos.save({'skidoo':i})
+        
+        with self.db.read():
+            doc = foos.indexes['times-one-hundred'].get({'times-one-hundred':300})
+            self.assertEqual(doc['skidoo'], 3)
+                    

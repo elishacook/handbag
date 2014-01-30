@@ -1,6 +1,5 @@
 from validators import Validator, GroupValidator
 from relationships import Relationship
-from functools import wraps
 
 
 def create(env):
@@ -22,7 +21,7 @@ class ModelMeta(type):
                         fields = (fields,)
                     cls.table.indexes.add(*fields)
             
-            cls.indexes = ModelIndexCollection(cls, cls.table.indexes)
+            cls.indexes = ModelIndexCollectionAdaptor(cls, cls.table.indexes)
             
             for k,v in cls.__dict__.items():
                 if isinstance(v, Relationship):
@@ -42,22 +41,11 @@ class ModelMeta(type):
         
         
     def cursor(cls, reverse=False):
-        return ModelCursor(cls, cls.table.cursor(reverse=reverse))
-        
-        
-    def remove(cls, id_or_spec):
-        if isinstance(id_or_spec, dict):
-            for inst in cls.find(id_or_spec):
-                inst.remove()
-        else:
-            inst = cls.get(id_or_spec)
-            if inst:
-                inst.remove()
+        return ModelCursorAdaptor(cls, cls.table.cursor(reverse=reverse))
         
         
     def count(cls):
         return cls.table.count()
-            
 
 
 
@@ -69,24 +57,23 @@ class BaseModel(object):
     def __init__(self, **kwargs):
         sup = super(BaseModel, self)
         sup.__setattr__('_dirty', kwargs.pop('_dirty', True))
-        sup.__setattr__('_dirty_fields', {})
         sup.__setattr__('_reference_fields', {})
         
         for k,v in self.__class__.__dict__.items():
             if isinstance(v, Validator):
                 field_value = kwargs.get(k, v.default())
                 sup.__setattr__(k, field_value)
-                if self._dirty:
-                    self._dirty_fields[k] = (None, field_value)
             elif isinstance(v, Relationship):
-                self._reference_fields[k] = kwargs.get(k)
+                if k in kwargs:
+                    self._reference_fields[k] = kwargs[k]
         
         if 'id' in kwargs:
             sup.__setattr__('id', kwargs['id'])
         else:
             sup.__setattr__('id', self.env.generate_id())
         
-        self.env.watch_for_changes(self)
+        self.env.instances.add(self)
+        self.env.current_context().enqueue(self)
         
         
     def __setattr__(self, name, value):
@@ -95,8 +82,8 @@ class BaseModel(object):
             oldvalue = getattr(self, name)
             if oldvalue != value:
                 self._dirty = True
-                self._dirty_fields[name] = (oldvalue, value)
                 super(BaseModel, self).__setattr__(name, value)
+                self.env.current_context().enqueue(self)
         else:
             super(BaseModel, self).__setattr__(name, value)
         
@@ -115,20 +102,23 @@ class BaseModel(object):
         if value != self._reference_fields.get(name):
             oldvalue = self._reference_fields.get(name)
             self._reference_fields[name] = value
-            self._dirty_fields[name] = (oldvalue, value)
             self._dirty = True
+            self.env.current_context().enqueue(self)
             
             
     def get_reference_field(self, name):
         return self._reference_fields.get(name)
     
         
+    def remove_reference_field(self, name):
+        if name in self._reference_fields:
+            self._reference_fields.pop(name)
+            self._dirty = True
+            self.env.current_context().enqueue(self)
+        
+        
     def is_dirty(self):
         return self._dirty
-        
-        
-    def get_dirty_fields(self):
-        return self._dirty_fields
         
         
     def remove(self):
@@ -142,7 +132,8 @@ class BaseModel(object):
     def save(self):
         if self.is_dirty():
             doc = self.validate()
-            self.table.save(doc)
+            doc = self.table.save(doc)
+            super(BaseModel, self).__setattr__('id', doc['id'])
         
         
     def validate(self):
@@ -168,70 +159,86 @@ class BaseModel(object):
         return values
         
         
-        
-class ModelIteratorWrapper(object):
-    singles = []
+from functools import wraps
+
+
+class ModelAdaptor(object):
+    
+    functions = []
     iterators = []
     
-    def __init__(self, model, wrapper):
-        self.model = model
-        self.wrapper = wrapper
-        for k in self.singles:
-            setattr(self, k, self._make_single(getattr(self.wrapper, k)))
-        for k in self.iterators:
-            setattr(self, k, self._make_iterator(getattr(self.wrapper, k)))
-            
-            
-    def __getattr__(self, name):
-        return getattr(self.wrapper, name)
     
+    def __init__(self, model, adapted):
+        self.model = model
+        self.adapted = adapted
+        
+        for k in self.functions:
+            setattr(self, k, self.adapt_function(getattr(self.adapted, k)))
+            
+        for k in self.iterators:
+            setattr(self, k, self.adapt_iterator(getattr(self.adapted, k)))
+        
+        
+    def __getattr__(self, name):
+        return getattr(self.adapted, name)
+        
+        
+    def load(self, data):
+        if data:
+            data['_dirty'] = False
+            return self.model(**data)
+            
+            
+    def adapt_function(self, fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            data = fn(*args, **kwargs)
+            return self.load(data)
+        return wrapper
+        
+        
+    def adapt_iterator(self, fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            for data in fn(*args, **kwargs):
+                yield self.load(data)
+        return wrapper
+    
+    
+class ModelCursorAdaptor(ModelAdaptor):
+    functions = ['first', 'last']
+    iterators = ['range', 'prefix', 'key']
     
     def __iter__(self):
-        for doc in self.wrapper:
-            doc['_dirty'] = False
-            yield self.model(**doc)
+        for data in self.adapted:
+            yield self.load(data)
     
-            
-    def _make_single(self, fn):
-        @wraps(fn)
-        def wrapper(*args, **kwargs):
-            doc = fn(*args, **kwargs)
-            if doc:
-                doc['_dirty'] = False
-                return self.model(**doc)
-        return wrapper
+    
+class ModelIndexAdaptor(ModelAdaptor):
+    functions = ['get']
+    iterators = ['all']
+    
+    def cursor(self, reverse=False):
+        return ModelCursorAdaptor(self.model, self.adapted.cursor(reverse=reverse))
         
         
-    def _make_iterator(self, fn):
-        @wraps(fn)
-        def wrapper(*args, **kwargs):
-            for doc in fn(*args, **kwargs):
-                doc['_dirty'] = False
-                yield self.model(**doc)
-        return wrapper
-
-
-class ModelCursor(ModelIteratorWrapper):
-    singles = ['first', 'last']
-    iterators = ['range', 'prefix', 'key']
-
-    
-class ModelIndexCollection(object):
+class ModelIndexCollectionAdaptor(object):
     
     def __init__(self, model, index_collection):
         self.model = model
         self.index_collection = index_collection
         
         
+    def __contains__(self, fields):
+        return fields in self.index_collection
+        
+        
     def __getitem__(self, fields):
         index = self.index_collection.__getitem__(fields)
-        return ModelIndex(self.model, index)
+        return ModelIndexAdaptor(self.model, index)
         
         
-class ModelIndex(ModelIteratorWrapper):
-    singles = ['get']
-    iterators = ['all']
-    
-    def cursor(self, reverse=False):
-        return ModelCursor(self.model, self.index.cursor(reverse=reverse))
-    
+    def add(self, *args, **kwargs):
+        self.index_collection.add(*args, **kwargs)
+        
+        

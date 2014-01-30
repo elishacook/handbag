@@ -10,6 +10,7 @@ class Relationship(object):
         self.name = None
         self.model = None
         self.env = None
+        self.is_setup = False
         self._target_model = target_model
         self._inverse_name = inverse
         self._inverse = None
@@ -17,6 +18,9 @@ class Relationship(object):
         
         
     def setup(self, name, model):
+        if self.is_setup:
+            return
+        self.is_setup = True
         self.name = name
         self.model = model
         self.env = model.env
@@ -42,12 +46,14 @@ class Relationship(object):
             self.env.backreferences.set(self.get_target_model_name(), self._inverse_name, self)
         
         
-    def set_inverse(self, ref):
-        if not isinstance(ref, Relationship):
+    def set_inverse(self, rel):
+        if not isinstance(rel, Relationship):
             raise TypeError, "Expected a Relationship instance."
-        self.validate_inverse(ref)
-        self._inverse = ref
-        ref._inverse = self
+        self.validate_inverse(rel)
+        self._inverse = rel
+        rel._inverse = self
+        self.on_inverse_set()
+        rel.on_inverse_set()
         
         
     def get_inverse(self):
@@ -80,6 +86,10 @@ class Relationship(object):
     def on_owner_remove(self, owner):
         if self._cascade:
             self.cascade(owner)
+            
+            
+    def on_inverse_set(self):
+        pass
         
         
     def is_target_model_defined(self):
@@ -190,36 +200,27 @@ class ManyToOne(One):
         return OneToMany(self.model)
 
 
-class ManyProxy(object):
-    
-    def __init__(self, rel, owner):
-        self._rel = rel
-        self._owner = owner
-        
-        
-    def count(self, spec=None):
-        return self._rel.count(self._owner, spec)
-        
-        
-    def __iter__(self):
-        return self._rel.iter(self._owner)
-        
-        
-    def add(self, target):
-        return self._rel.add(self._owner, target)
-        
-        
-    def remove(self, target):
-        return self._rel.remove(self._owner, target)
-        
-
-
 class Many(Relationship):
+    
+    
+    def __init__(self, *args, **kwargs):
+        self.indexes = kwargs.pop('indexes', [])
+        super(Many, self).__init__(*args, **kwargs)
+    
     
     def setup(self, name, model):
         if not self._inverse_name:
             self._inverse_name = model.__name__.lower()
+            
         super(Many, self).setup(name, model)
+        
+        
+    def on_inverse_set(self):
+        self.setup_indexes()
+        
+        
+    def setup_indexes(self):
+        raise NotImplementedError
         
         
     def iter(self, owner):
@@ -246,8 +247,136 @@ class Many(Relationship):
         raise NotImplementedError
         
         
+    def index_key_adaptor(self, owner):
+        raise NotImplementedError
+
+
+class ManyProxy(object):
+    
+    def __init__(self, rel, owner):
+        self._rel = rel
+        self._owner = owner
+        self.indexes = ManyIndexCollection( rel.index_key_adaptor(owner) )
+        
+        
+    def count(self):
+        return self._rel.count(self._owner)
+        
+        
+    def __iter__(self):
+        return self._rel.iter(self._owner)
+        
+        
+    def first(self):
+        return self.__iter__().next()
+        
+        
+    def add(self, target):
+        return self._rel.add(self._owner, target)
+        
+        
+    def remove(self, target):
+        return self._rel.remove(self._owner, target)
+    
+    
+class ManyIndexCollection(object):
+    
+    def __init__(self, adaptor):
+        self.adaptor = adaptor
+        
+        
+    def __getitem__(self, fields):
+        return ManyIndex(self.adaptor, fields)
+    
+    
+class ManyIndex(object):
+    
+    def __init__(self, adaptor, fields):
+        self.adaptor = adaptor
+        self.index = self.adaptor.get_index(fields)
+        
+        
+    def get(self, key):
+        return self.index.get(
+            self.adaptor.make_key(self.index, key)
+        )
+        
+        
+    def all(self, key):
+        return self.index.all(
+            self.adaptor.make_key(self.index, key)
+        )
+        
+        
+    def count(self):
+        return self.index.cursor().count_range(start=self.adaptor.make_key(self.index))
+        
+        
+    def cursor(self, reverse=False):
+        return ManyCursor(self.adaptor, self.index, self.index.cursor())
+        
+        
+class ManyCursor(object):
+    
+    def __init__(self, adaptor, index, cursor):
+        self.adaptor = adaptor
+        self.index = index
+        self.cursor = cursor
+        
+        
+    def first(self):
+        try:
+            self.cursor.prefix(self.adaptor.make_key(self.index)).next()
+        except StopIteration:
+            pass
+            
+            
+    def last(self):
+        old_reverse = self.cursor.reverse
+        self.cursor.reverse = True
+        result = self.first()
+        self.cursor.reverse = old_reverse
+        return result
+        
+        
+    def __iter__(self):
+        return self.cursor.prefix(self.adaptor.make_key(self.index))
+        
+        
+    def range(self, start=None, end=None):
+        start, end = [self.adaptor.make_key(self.index, k) if k is not None else None for k in (start, end)]
+        return self.cursor(start, end)
+        
+        
+    def prefix(self, key):
+        return self.cursor.prefix(self.adaptor.make_key(self.index, key))
+        
+        
+    def key(self, key):
+        return self.cursor.key(self.adaptor.make_key(self.index, key))
+        
+        
+    def count_prefix(self, key):
+        return self.cursor.count_prefix(self.adaptor.make_key(self.index, key))
+        
+        
+    def count_key(self, key):
+        return self.cursor.count_key(self.adaptor.make_key(self.index, key))
+    
     
 class OneToMany(Many):
+    
+    def setup_indexes(self):
+        index_collection = self.get_target_model().indexes
+        index_collection.add(self._inverse_name)
+        
+        for fields in self.indexes:
+            if isinstance(fields, tuple):
+                complete_fields = (self._inverse_name,) + fields
+            else:
+                complete_fields = (self._inverse_name, fields)
+            index_collection.add(*complete_fields)
+        
     
     def iter(self, owner):
         return self.get_target_model().indexes[self._inverse_name].cursor().key(owner.id)
@@ -266,27 +395,65 @@ class OneToMany(Many):
         
         
     def count(self, owner):
-        self.get_target_model().indexes[self._inverse_name].cursor().count_key(owner.id)
+        return self.get_target_model().indexes[self._inverse_name].cursor().count_key(owner.id)
         
         
     def cascade(self, owner):
-        for target in self.iter(owner):
+        for target in list(self.iter(owner)):
             target.remove()
-
+            
+            
+    def index_key_adaptor(self, owner):
+        return OneToManyIndexKeyAdaptor(self, owner)
+        
+        
+class OneToManyIndexKeyAdaptor(object):
+    
+    def __init__(self, rel, owner):
+        self.rel = rel
+        self.owner = owner
+        
+        
+    def make_key(self, index, key=None):
+        if key is None:
+            key = {}
+        if isinstance(key, dict):
+            key[self.rel._inverse_name] = self.owner.id
+        else:
+            k = self.index.fields()[0]
+            key = {
+                k: key,
+                self.rel._inverse_name: self.owner.id
+            }
+        
+        return key
+        
+        
+    def get_index(self, fields):
+        if isinstance(fields, tuple):
+            complete_fields = (self.rel._inverse_name,) + fields
+        else:
+            complete_fields = (self.rel._inverse_name, fields)
+            
+        return self.rel.get_target_model().indexes[complete_fields]
 
     
 class ManyToMany(Many):
     
     def __init__(self, *args, **kwargs):
-        self.index_name = kwargs.pop('name', None)
+        self.join = kwargs.pop('name', None)
         super(ManyToMany, self).__init__(*args, **kwargs)
     
     
     def setup(self, name, model):
         super(ManyToMany, self).setup(name, model)
         if not self.index_name:
-            self.index_name = '-'.join(sorted(model.__name__, self.get_target_model_name()))
+            self.index_name = '-'.join(sorted([model.__name__, self.get_target_model_name()]))
         self.index = model.env.db[self.index_name]
+    
+    
+    def setup_indexes(self):
+        raise NotImplementedError
     
     
     def create_inverse(self):
@@ -302,29 +469,15 @@ class ManyToMany(Many):
         raise NotImplementedError
         
         
-        
     def remove(self, owner, target):
-        target_ids = self.get_target_ids(owner, target_or_spec)
-        if len(target_ids) == 0:
-            return
-        self._storage_policy.remove(self, owner, target_ids)
-        
-        
-    def get_target_ids(self, owner, target_or_spec):
-        spec = self.get_spec_from_target_or_spec(owner, target_or_spec)
-        target_collection = self.get_target_model().get_collection()
-        return [r['id'] for r in target_collection.find(spec, [])]
+        raise NotImplementedError
         
         
     def cascade(self, owner):
-        spec = self.spec(owner)
-        self.get_target_model().remove(spec)
-        
-        
-    def spec(self, owner):
-        return self._storage_policy.spec(self, owner)
+        raise NotImplementedError
         
         
     def count(self, owner, spec=None):
-        return self._storage_policy.count(self, owner, spec)
+        raise NotImplementedError
+        
         

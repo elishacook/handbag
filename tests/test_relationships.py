@@ -110,7 +110,7 @@ class TestRelationships(unittest.TestCase):
         
         class City(self.env.Model):
             name = Text()
-            bars = OneToMany("Bar", inverse="city")
+            bars = OneToMany("Bar", inverse="city", indexes=['name'])
             indexes = ['name']
         
         class Bar(self.env.Model):
@@ -127,11 +127,11 @@ class TestRelationships(unittest.TestCase):
         with self.env.read():
             city = City.indexes['name'].get('San Francisco')
             self.assertEquals(city.bars.count(), 4)
-            self.assertEquals(sorted([b.name for b in city.bars]), data['San Francisco'])
+            self.assertEquals([b.name for b in city.bars.indexes['name'].cursor()], data['San Francisco'])
             
             city = City.indexes['name'].get('New York')
             self.assertEquals(city.bars.count(), 4)
-            self.assertEquals(sorted([b.name for b in city.bars]), data['New York'])
+            self.assertEquals([b.name for b in city.bars.indexes['name'].cursor()], data['New York'])
             
             bar = Bar.indexes['name'].get('Donna')
             self.assertEquals(bar.city.name, 'New York')
@@ -143,19 +143,19 @@ class TestRelationships(unittest.TestCase):
         with self.env.read():
             self.assertEquals(city.bars.count(), 3)
             
-            b = city.bars.next()
+            b = city.bars.first()
             name = b.name
             self.assertIn(name, data['New York'])
             
         with self.env.write():
             city.bars.remove(b)
             
-        with self.env.read:
+        with self.env.read():
             self.assertEquals(city.bars.count(), 2)
             new_b = Bar.indexes['name'].get(name)
             self.assertEquals(b, new_b)
         
-"""
+        
     def test_one_to_many_overdefined(self):
         data = {
             'San Francisco': [
@@ -168,11 +168,13 @@ class TestRelationships(unittest.TestCase):
         
         class City(self.env.Model):
             name = Text()
-            bars = OneToMany("Bar", inverse="city")
+            bars = OneToMany("Bar", inverse="city", indexes=['name'])
+            indexes = ['name']
         
         class Bar(self.env.Model):
             name = Text()
             city = ManyToOne(City, inverse="bars")
+            indexes = ['name']
         
         with self.env.write():
             for city, bars in data.items():
@@ -182,15 +184,15 @@ class TestRelationships(unittest.TestCase):
                     c.bars.add(b)
         
         with self.env.read():
-            city = City.find_one({'name': 'San Francisco'})
+            city = City.indexes['name'].get('San Francisco')
             self.assertEquals(city.bars.count(), 4)
-            self.assertEquals([b.name for b in city.bars.find().sort('name')], data['San Francisco'])
+            self.assertEquals([b.name for b in city.bars.indexes['name'].cursor()], data['San Francisco'])
             
-            city = City.find_one({'name': 'New York'})
+            city = City.indexes['name'].get('New York')
             self.assertEquals(city.bars.count(), 4)
-            self.assertEquals([b.name for b in city.bars.find().sort('name')], data['New York'])
+            self.assertEquals([b.name for b in city.bars.indexes['name'].cursor()], data['New York'])
             
-            bar = Bar.find_one({'name':'Donna'})
+            bar = Bar.indexes['name'].get('Donna')
             self.assertEquals(bar.city.name, 'New York')
             self.assertEquals(bar.city, city)
         
@@ -200,17 +202,19 @@ class TestRelationships(unittest.TestCase):
         with self.env.read():
             self.assertEquals(city.bars.count(), 3)
             
-            b = city.bars.next()
+            b = city.bars.first()
             name = b.name
             self.assertIn(name, data['New York'])
             
         with self.env.write():
             city.bars.remove(b)
+            
+        with self.env.read():
             self.assertEquals(city.bars.count(), 2)
-            new_b = Bar.find_one({'name':name})
+            new_b = Bar.indexes['name'].get(name)
             self.assertEquals(b, new_b)
         
-        
+
     def test_one_to_many_cascade(self):
         class City(self.env.Model):
             name = Text()
@@ -218,72 +222,34 @@ class TestRelationships(unittest.TestCase):
         
         class Bar(self.env.Model):
             name = Text()
+            indexes = ['name']
         
         with self.env.write():
             city_a = City(name="Foo City")
             city_b = City(name="Qux City")
-        
+            
             for i in range(0,10):
-                b = Bar(name="Bar a#%s" % str(i+1))
-                city_a.bars.add(b)
+                a = Bar(name="Bar a#%s" % str(i+1))
+                city_a.bars.add(a)
                 
                 b = Bar(name="Bar b#%s" % str(i+1))
                 city_b.bars.add(b)
         
         with self.env.read():
             self.assertEquals(Bar.count(), 20)
+            self.assertEquals(city_a.bars.count(), 10)
+            self.assertEquals(city_b.bars.count(), 10)
             
         with self.env.write():
             city_a.remove()
             
         with self.env.read():
             self.assertEquals(Bar.count(), 10)
-            b = Bar.find().sort('name').next()
+            b = Bar.indexes['name'].cursor().first()
             self.assertEquals(b.name, "Bar b#1")
         
         
-    def test_one_to_many_query(self):
-        class Foo(self.env.Model):
-            bars = OneToMany("Bar", inverse="foo")
-            
-        class Bar(self.env.Model):
-            number = TypeOf(int)
-            
-        with self.env.write():
-            foo = Foo()
-            
-        with self.env.read():
-            self.assertEquals(foo.bars.count(), 0)
-            self.assertEquals(foo.bars.count({'number':{'$gt':5}}), 0)
-        
-        with self.env.write():
-            for i in range(0, 20):
-                b = Bar(number=i)
-                b.foo = foo
-            
-            for i in range(0,10):
-                f = Foo()
-        
-        with self.env.read():
-            self.assertEquals(Foo.count(), 11)
-            self.assertEquals(Bar.count(), 20)
-            self.assertEquals(foo.bars.count(), 20)
-            self.assertEquals(foo.bars.count({'number':{'$gt':5}}), 14)
-        
-        with self.env.write():
-            for i in range(0,10):
-                b = Bar(number=100 + i)
-        
-        with self.env.read():
-            self.assertEquals(Bar.count(), 30)
-            self.assertEquals(foo.bars.count(), 20)
-        
-            all_bars = list(Bar.find({'number':{'$lt':5}}))
-            foo_bars = list(foo.bars.find({'number':{'$lt':5}}))
-            self.assertEquals(foo_bars, all_bars)
-        
-        
-    def test_many_to_many(self, storage_policy):
+    def test_many_to_many(self):
         tags_by_doc = {
             "foo": ["tofu", "seitan"],
             "bar": ["seitan"],
@@ -346,7 +312,7 @@ class TestRelationships(unittest.TestCase):
             doc = Document.find_one({'content':'baz'})
             self.assertEquals(doc.tags.count({'name':'tofu'}), 1)
         
-        
+"""
     def test_many_to_many_cascade(self):
         class Foo(self.env.Model):
             bars = ManyToMany("Bar", inverse="foos", cascade=True)
