@@ -1,10 +1,10 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 execfile('handbag/version.py')
 
 setup(
     name = 'handbag',
     version = __version__,
-    packages = ['handbag'],
+    packages = find_packages(),
     description = 'An embedded database and data modeling library for python.',
     author = 'Elisha Fitch-Cook',
     author_email = 'elisha@elishacook.com',

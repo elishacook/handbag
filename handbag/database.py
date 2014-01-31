@@ -42,6 +42,7 @@ class Database(object):
     def close(self):
         self.dbm.close()
         
+        
     def ensure_indexes_synced(self):
         if self.indexes_synced:
             return
