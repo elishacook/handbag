@@ -1,8 +1,8 @@
 # Handbag
 
-**NOTE** This is pre-alpha software, i.e., cool your jets, lots of stuff is not implemented. If you like the concept, consider helping out by checking out what *is* implemented, suggesting ideas, writing code or just sending a nice note to keep me motivated. Thanks!
+**NOTE** This is alpha software. All the tests are passing and there is pretty good test coverage but the library is new, new, new. Things may change significantly, there not be a test covering your use case, etc., etc.
 
-Handbag is an embedded database for python. Its goal is to be a viable persistence option for small-to-medium sized projects and also to be super fun to use. This is not the DB for giganto-scale applications, but if you want data persistence, consistency and convenience this might be the thing for you.
+Handbag is an embedded database for python. Its goal is to be a viable persistence option for small-to-medium sized projects and also to be enjoyable to use. This is not the DB for giganto-scale applications, but if you want data persistence, consistency and convenience this might be the thing for you.
 
 Handbag uses [lmdb](http://symas.com/mdb/) (also [py-lmdb](https://github.com/dw/py-lmdb)) so it inherits all of its excellent qualities. When you use Handbag you get:
 
@@ -11,18 +11,18 @@ Handbag uses [lmdb](http://symas.com/mdb/) (also [py-lmdb](https://github.com/dw
 * Pretty good core performance ([lmdb benchmark]([http://symas.com/mdb/microbench/]), no handbag benchmarks yet)
 * Data validation
 * Relationship modeling
-* Lazy database creation
+* Sorted indexes
 
-The backend system is pluggable making it hypothetically possible to implement other storage mechanisms in the future.
+The backend system is pluggable making it hypothetically possible to implement other storage mechanisms in the future but as of now, that engine must support multi-table atomic transactions.
 
 ## What's it look like?
 
 ```python
 import random
-from handbag import *
+from handbag import environment
 
 # Create a database on the filesystem
-env = Environment('/tmp/foos-and-bars.db')
+env = environment.open('/tmp/foos-and-bars.db')
 
 # Define some models that will be stored in the database
 
@@ -45,7 +45,7 @@ with env.write():
 # Some time later...
 
 with env.read():
-    bar = Bar[bar_id]
+    bar = Bar.get(bar_id)
     assert bar.address == "123 Snapchat Lane"
     assert bar.foo.name == "Foo Boringface"
     assert list(foo.bars)[0] == bar
