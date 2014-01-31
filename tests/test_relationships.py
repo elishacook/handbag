@@ -315,7 +315,7 @@ class TestRelationships(unittest.TestCase):
             doc = Document.indexes['content'].get('baz')
             self.assertEquals(doc.tags.indexes['name'].cursor().count_key('tofu'), 1)
         
-"""
+
     def test_many_to_many_cascade(self):
         class Foo(self.env.Model):
             bars = ManyToMany("Bar", inverse="foos", cascade=True)
@@ -347,38 +347,7 @@ class TestRelationships(unittest.TestCase):
             
             for foo in foos[1:]:
                 self.assertEquals(foo.bars.count(), 10)
-            
-            
-    def test_class_remove_cascade(self):
-        class Foo(self.env.Model):
-            number = TypeOf(int)
-            bars = OneToMany("Bar", inverse="foo", cascade=True)
-            
-        class Bar(self.env.Model):
-            number = TypeOf(int)
-            
-        with self.env.write():
-            for i in range(0,5):
-                f = Foo()
-                f.number = i
-                
-                for j in range(0,10):
-                    b = Bar()
-                    b.number = j
-                    f.bars.add(b)
-        
-        with self.env.read():
-            self.assertEquals(Foo.count(), 5)
-            self.assertEquals(Bar.count(), 50)
-        
-        with self.env.write():
-            Foo.remove({'number': 4})
-        
-        with self.env.read():
-            self.assertEquals(Foo.count(), 4)
-            self.assertEquals(Bar.count(), 40)
-        
-        
+
     def test_redefine_backreference_fails(self):
         class Foo(self.env.Model):
             pass
@@ -406,30 +375,6 @@ class TestRelationships(unittest.TestCase):
             class Bar(self.env.Model):
                 foo = OneToMany(Foo)
                 
-                
-    def test_remove_with_spec(self):
-        class Foo(self.env.Model):
-            bars = OneToMany("Bar")
-            
-        class Bar(self.env.Model):
-            number = TypeOf(int)
-            
-        with self.env.write():
-            foo = Foo()
-            
-            for i in range(0,10):
-                b = Bar(number=i)
-                foo.bars.add(b)
-        
-        with self.env.read():
-            self.assertEquals(foo.bars.count(), 10)
-        
-        with self.env.write():
-            foo.bars.remove({'number':{'$lt':5}})
-            
-        with self.env.read():
-            self.assertEquals(foo.bars.count(), 5)
-"""        
         
 if __name__ == "__main__":
     unittest.main()

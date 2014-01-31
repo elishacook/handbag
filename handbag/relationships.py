@@ -35,10 +35,14 @@ class Relationship(object):
             backref = self.env.backreferences.get(self.model.__name__, self.name)
             if backref:
                 self.set_inverse(backref)
-            elif hasattr(self._target_model, self._inverse_name):
-                inverse_rel = getattr(self._target_model, self._inverse_name)
-                assert not inverse_rel.has_inverse(), \
-                    "Attempt to redefine inverse relationship %s.%s" % (self._target_model.name, self._inverse_name)
+            else:
+                if hasattr(self._target_model, self._inverse_name):
+                    inverse_rel = getattr(self._target_model, self._inverse_name)
+                    assert not inverse_rel.has_inverse(), \
+                        "Attempt to redefine inverse relationship %s.%s" % (self._target_model.__name__, self._inverse_name)
+                else:
+                    inverse_rel = self.get_inverse()
+                    setattr(self._target_model, inverse_rel.name, inverse_rel)
                 inverse_rel.set_inverse(self)
         else:
             assert self.env.backreferences.get(self.get_target_model_name(), self._inverse_name) is None, \
