@@ -247,6 +247,10 @@ class Many(Relationship):
         raise NotImplementedError
         
         
+    def contains(self, owner, obj):
+        raise NotImplementedError
+        
+        
     def index_key_adaptor(self, owner):
         raise NotImplementedError
 
@@ -265,6 +269,14 @@ class ManyProxy(object):
         
     def __iter__(self):
         return self._rel.iter(self._owner)
+        
+        
+    def __contains__(self, obj):
+        return self._rel.contains(self._owner, obj)
+        
+        
+    def __len__(self):
+        return self.count()
         
         
     def first(self):
@@ -314,6 +326,36 @@ class ManyIndex(object):
         
     def cursor(self, reverse=False):
         return ManyCursor(self.adaptor, self.index, self.index.cursor())
+        
+        
+class ManyIndexKeyAdaptor(object):
+    
+    def __init__(self, rel, owner, reference_field_name):
+        self.rel = rel
+        self.owner = owner
+        self.reference_field_name = reference_field_name
+        
+        
+    def make_key(self, index, key=None):
+        if key is None:
+            key = {}
+        if isinstance(key, dict):
+            key[self.reference_field_name] = self.owner.id
+        else:
+            key = {
+                self.reference_field_name: self.owner.id,
+                index.get_fields().names[1]: key
+            }
+        return key
+        
+        
+    def get_index(self, fields):
+        if isinstance(fields, tuple):
+            complete_fields = (self.reference_field_name,) + fields
+        else:
+            complete_fields = (self.reference_field_name, fields)
+            
+        return self.rel.get_target_model().indexes[complete_fields]
         
         
 class ManyCursor(object):
@@ -403,58 +445,54 @@ class OneToMany(Many):
             target.remove()
             
             
-    def index_key_adaptor(self, owner):
-        return OneToManyIndexKeyAdaptor(self, owner)
-        
-        
-class OneToManyIndexKeyAdaptor(object):
-    
-    def __init__(self, rel, owner):
-        self.rel = rel
-        self.owner = owner
-        
-        
-    def make_key(self, index, key=None):
-        if key is None:
-            key = {}
-        if isinstance(key, dict):
-            key[self.rel._inverse_name] = self.owner.id
+    def contains(self, owner, obj):
+        if isinstance(obj, self.get_target_model()):
+            return obj.get_reference_field(self._inverse_name) == owner.id
         else:
-            k = self.index.fields()[0]
-            key = {
-                k: key,
-                self.rel._inverse_name: self.owner.id
-            }
-        
-        return key
-        
-        
-    def get_index(self, fields):
-        if isinstance(fields, tuple):
-            complete_fields = (self.rel._inverse_name,) + fields
-        else:
-            complete_fields = (self.rel._inverse_name, fields)
+            return False
             
-        return self.rel.get_target_model().indexes[complete_fields]
+            
+    def index_key_adaptor(self, owner):
+        return ManyIndexKeyAdaptor(self, owner, self._inverse_name)
 
     
 class ManyToMany(Many):
     
-    def __init__(self, *args, **kwargs):
-        self.join = kwargs.pop('name', None)
-        super(ManyToMany, self).__init__(*args, **kwargs)
-    
-    
-    def setup(self, name, model):
-        super(ManyToMany, self).setup(name, model)
-        if not self.index_name:
-            self.index_name = '-'.join(sorted([model.__name__, self.get_target_model_name()]))
-        self.index = model.env.db[self.index_name]
-    
-    
     def setup_indexes(self):
-        raise NotImplementedError
+        self.full_name = "%s.%s" % (self.model.__name__, self.name)
+        self.full_inverse_name = "%s.%s" % (self.get_target_model_name(), self._inverse_name)
+        join_table_name = ','.join(sorted([self.full_name, self.full_inverse_name]))
+        self.join_table = self.model.env.db[join_table_name]
+        self.model_names = tuple(sorted([self.model.__name__, self.get_target_model_name()]))
+        if self.model_names not in self.join_table.indexes:
+            self.join_table.indexes.add(*self.model_names)
+            self.join_table.indexes.add(self.model_names[0])
+            self.join_table.indexes.add(self.model_names[1])
+        
+        target_model = self.get_target_model()
+        for fields in self.indexes:
+            if not isinstance(fields, tuple):
+                fields = (fields,)
+            fields = ( (self.full_name, self.get_owner_ids), ) + fields
+            target_model.indexes.add(*fields)
+            
     
+    def get_owner_ids(self, doc):
+        owner_ids = []
+        for pair in self.join_table.indexes[self.get_target_model_name()].all(doc['id']):
+            owner_ids.append(pair[self.model.__name__])
+        return owner_ids
+        
+        
+    def iter(self, owner):
+        target_model = self.get_target_model()
+        for doc in self.join_table.indexes[self.model.__name__].all(owner.id):
+            inst = target_model.get(doc[target_model.__name__])
+            if inst:
+                yield inst
+            else:
+                self.join_table.remove(doc['id'])
+        
     
     def create_inverse(self):
         return ManyToMany(self.model)
@@ -466,18 +504,43 @@ class ManyToMany(Many):
         
         
     def add(self, owner, target):
-        raise NotImplementedError
+        if not self.contains(owner, target):
+            self.join_table.save(self.make_join_doc(owner, target))
         
         
     def remove(self, owner, target):
-        raise NotImplementedError
+        key = self.make_join_doc(owner, target)
+        existing = self.join_table.indexes[self.model_names].get(key)
+        if existing:
+            self.join_table.remove(existing['id'])
         
         
     def cascade(self, owner):
-        raise NotImplementedError
+        for target in self.iter(owner):
+            target.remove()
+        for doc in self.join_table.indexes[self.model.__name__].all(owner.id):
+            self.join_table.remove(doc['id'])
         
         
-    def count(self, owner, spec=None):
-        raise NotImplementedError
+    def count(self, owner):
+        return self.join_table.indexes[self.model.__name__].cursor().count_key(owner.id)
         
+        
+    def contains(self, owner, obj):
+        if isinstance(obj, self.get_target_model()):
+            key = self.make_join_doc(owner, obj)
+            return self.join_table.indexes[self.model_names].cursor().count_key(key)
+        else:
+            return False
+        
+        
+    def index_key_adaptor(self, owner):
+        return ManyIndexKeyAdaptor(self, owner, self.full_name)
+        
+        
+    def make_join_doc(self, owner, target):
+        return {
+            self.model.__name__: owner.id,
+            self.get_target_model_name(): target.id
+        }
         

@@ -20,6 +20,10 @@ class FieldsGroup(object):
         self.virtual = dict(virtual_fields)
         
         
+    def __getitem__(self, i):
+        return self.names[i]
+        
+        
     def __iter__(self):
         return iter(self.names)
         
@@ -148,8 +152,6 @@ class Index(object):
         
         
     def update(self, old_doc, new_doc):
-        if old_doc == new_doc:
-            return
         value = dson.dumpone(new_doc['id'])
         new_keys = self.make_keys(new_doc)
         
@@ -163,28 +165,24 @@ class Index(object):
             self.dbm.put(self.name, k, value)
         
         
-    def get(self, key, duplicates=False):
+    def get(self, key):
         string_key = self.get_key(key)
-        if duplicates:
-            cur = self.dbm.cursor(self.name)
-            cur.jump(string_key)
-            docs = []
-            while cur.key() == string_key:
-                doc_key = cur.value()
-                doc_value = self.dbm.get(self.table_name, doc_key)
-                if doc_value:
-                    docs.append(dson.loads(doc_value))
-                cur.next()
-            return docs
-        else:
-            value = self.dbm.get(self.name, string_key)
-            if value:
-                doc_value = self.dbm.get(self.table_name, value)
-                if doc_value:
-                    return dson.loads(doc_value)
+        value = self.dbm.get(self.name, string_key)
+        if value:
+            doc_value = self.dbm.get(self.table_name, value)
+            if doc_value:
+                return dson.loads(doc_value)
     
     def all(self, key):
-        return self.get(key, duplicates=True)
+        string_key = self.get_key(key)
+        cur = self.dbm.cursor(self.name)
+        cur.jump(string_key)
+        while cur.key() == string_key:
+            doc_key = cur.value()
+            doc_value = self.dbm.get(self.table_name, doc_key)
+            if doc_value:
+                yield dson.loads(doc_value)
+            cur.next()
         
         
     def remove(self, doc):
@@ -209,8 +207,9 @@ class Index(object):
         rows = []
         for f in self.fields.names:
             if f in self.fields.virtual:
-                for v in self.fields.virtual[f](doc):
-                    rows.append([v])
+                values = self.fields.virtual[f](doc)
+                if len(values) > 0:
+                    rows.append(values)
             else:
                 try:
                     value = self.get_value(doc, f)

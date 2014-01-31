@@ -261,10 +261,13 @@ class TestRelationships(unittest.TestCase):
         
         class Document(self.env.Model):
             content = Text()
-            tags = ManyToMany("Tag", inverse="documents")
+            tags = ManyToMany("Tag", inverse="documents", indexes=['name'])
+            indexes = ['content']
             
         class Tag(self.env.Model):
             name = Text()
+            documents = ManyToMany(Document, inverse="tags", indexes=['content'])
+            indexes = ['name']
         
         tags = {}
         docs = {}
@@ -289,16 +292,16 @@ class TestRelationships(unittest.TestCase):
         
         with self.env.read():
             for k,v in tags_by_doc.items():
-                doc = Document.find_one({'content':k})
-                self.assertEquals([tag.name for tag in doc.tags.find().sort('name')], v)
+                doc = Document.indexes['content'].get(k)
+                self.assertEquals([tag.name for tag in doc.tags.indexes['name'].cursor()], v)
                 
             for k,v in docs_by_tag.items():
-                tag = Tag.find_one({'name':k})
-                self.assertEquals([doc.content for doc in tag.documents.find().sort('content')], v)
+                tag = Tag.indexes['name'].get(k)
+                self.assertEquals([doc.content for doc in tag.documents.indexes['content'].cursor()], v)
         
-            tag = Tag.find_one({'name':'seitan'})
+            tag = Tag.indexes['name'].get('seitan')
             self.assertEquals(tag.documents.count(), 4)
-            doc = tag.documents.next()
+            doc = tag.documents.first()
             self.assertIn('seitan', [tag.name for tag in doc.tags])
             num_doc_tags = doc.tags.count()
             
@@ -309,8 +312,8 @@ class TestRelationships(unittest.TestCase):
             self.assertEquals(tag.documents.count(), 3)
             self.assertEquals(doc.tags.count(), num_doc_tags-1)
             
-            doc = Document.find_one({'content':'baz'})
-            self.assertEquals(doc.tags.count({'name':'tofu'}), 1)
+            doc = Document.indexes['content'].get('baz')
+            self.assertEquals(doc.tags.indexes['name'].cursor().count_key('tofu'), 1)
         
 """
     def test_many_to_many_cascade(self):

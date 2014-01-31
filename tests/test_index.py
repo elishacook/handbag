@@ -61,7 +61,7 @@ class TestIndex(unittest.TestCase):
             result = foos.indexes['skidoo'].get({'skidoo':23})
             self.assertEqual(result['foo'], 'bar')
             
-            results = foos.indexes['skidoo'].get({'skidoo':23}, duplicates=True)
+            results = list(foos.indexes['skidoo'].all({'skidoo':23}))
             self.assertEqual(len(results), 2)
             self.assertEqual(results[0]['foo'], 'bar')
             self.assertEqual(results[1]['foo'], 'baz')
@@ -70,7 +70,7 @@ class TestIndex(unittest.TestCase):
             foos.remove(results[0]['id'])
             
         with self.db.read():
-            results = foos.indexes['skidoo'].get({'skidoo':23}, duplicates=True)
+            results = list(foos.indexes['skidoo'].all({'skidoo':23}))
             self.assertEqual(len(results), 1)
             self.assertEqual(results[0]['foo'], 'baz')
             
