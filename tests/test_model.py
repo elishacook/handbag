@@ -272,3 +272,33 @@ class TestModel(unittest.TestCase):
             b = Bar.indexes['skidoo'].get(3)
             self.assertEquals(b, None)
             
+            
+    def test_multiple_descendants(self):
+        class Foo(self.env.Model):
+            skidoo = TypeOf(int)
+            indexes = ['skidoo']
+            
+        class Bar(Foo):
+            pass
+            
+        class Baz(Foo):
+            pass
+            
+            
+        with self.env.write():
+            for i in range(0,5):
+                f = Foo(skidoo=i)
+            for i in range(10,13):
+                b = Bar(skidoo=i)
+            for i in range(20,27):
+                b = Baz(skidoo=i)
+        
+        with self.env.read():
+            self.assertEquals(Foo.count(), 15)
+            x = Foo.indexes['skidoo'].get(3)
+            self.assertEquals(x.__class__.__name__, 'Foo')
+            x = Foo.indexes['skidoo'].get(11)
+            self.assertEquals(x.__class__.__name__, 'Bar')
+            x = Foo.indexes['skidoo'].get(23)
+            self.assertEquals(x.__class__.__name__, 'Baz')
+            

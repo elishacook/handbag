@@ -49,7 +49,8 @@ class ModelMeta(type):
                 ModelIndexCollectionAdaptor(cls, cls.table.indexes),
                 [('_type', cls._type)]
             )
-            cls.indexes.add()
+            if tuple() not in cls.indexes:
+                cls.indexes.add()
             cls.primary_index = cls.indexes.get()
         else:
             cls.indexes = ModelIndexCollectionAdaptor(cls, cls.table.indexes)
@@ -120,8 +121,6 @@ class BaseModel(object):
         for k,v in self.relationships:
             if k in kwargs:
                 self._reference_fields[k] = kwargs[k]
-        
-        print self._reference_fields
         
         if 'id' in kwargs:
             sup.__setattr__('id', kwargs['id'])
