@@ -1,4 +1,5 @@
 import itertools
+import functools
 import cursor
 import dson
 
@@ -60,7 +61,8 @@ class IndexCollection(object):
     def add(self, *fields, **kwargs):
         fields = FieldsGroup(fields)
         assert fields not in self.indexes, "Attempting to redefine index %s" % str(fields)
-        self.indexes[fields] = Index(self.dbm, self.name, fields, kwargs.get('unique', False))
+        self.indexes[fields] = Index(self.dbm, self.name, fields, 
+            unique=kwargs.get('unique', False), filter=kwargs.get('filter', None))
         
         
     def __contains__(self, fields):
@@ -69,13 +71,17 @@ class IndexCollection(object):
         return fields in self.indexes
         
         
-    def __getitem__(self, fields):
+    def get(self, fields):
         if not isinstance(fields, tuple):
             fields = (fields,)
         index = self.indexes.get(fields)
         if not index:
             raise KeyError, "No index for %s" % str(fields)
         return index
+        
+        
+    def __getitem__(self, fields):
+        return self.get(fields)
         
         
     def __iter__(self):
@@ -139,12 +145,13 @@ class IndexCollection(object):
     
 class Index(object):
     
-    def __init__(self, dbm, table_name, fields, unique=False):
+    def __init__(self, dbm, table_name, fields, unique=False, filter=None):
         self.dbm = dbm
         self.table_name = table_name
         self.fields = fields
         self.name = '%s.%s' % (self.table_name, ','.join(self.fields.names))
         self.dbm.add_namespace(self.name, duplicate_keys=(not unique))
+        self.filter = filter
         
         
     def get_fields(self):
@@ -152,6 +159,11 @@ class Index(object):
         
         
     def update(self, old_doc, new_doc):
+        if self.filter and not self.filter(new_doc):
+            if old_doc and self.filter(old_doc):
+                self.remove(old_doc)
+            return
+            
         value = dson.dumpone(new_doc['id'])
         new_keys = self.make_keys(new_doc)
         
@@ -276,9 +288,135 @@ class IndexCursor(cursor.Cursor):
         return self.index.dump_key(parts)
         
         
-        
     def load(self, data):
         doc_value = self.index.dbm.get(self.index.table_name, data)
         if doc_value:
             return dson.loads(doc_value)
+
+
+def make_key(base_key, extension_fields, key=None):
+    if key is None:
+        key = {}
+    if isinstance(key, dict):
+        key.update(dict(base_key))
+    else:
+        key = {
+            extension_fields[0]: key
+        }
+        key.update(base_key)
+    return key
+
+
+class BaseKeyIndexCollectionProxy(object):
+    
+    def __init__(self, index_collection, base_key):
+        self._index_collection = index_collection
+        self._base_key = base_key
+        
+        
+    def add(self, *fields):
+        complete_fields = self.get_complete_fields(fields)
+        return self._index_collection.add(*complete_fields)
+        
+        
+    def get(self, fields=tuple()):
+        if not isinstance(fields,tuple):
+            fields = (fields,)
+        index = self._index_collection[self.get_complete_fields(fields)]
+        return BaseKeyIndexProxy(index, self._base_key, fields)
+        
+    def __getitem__(self, fields):
+        return self.get(fields)
+        
+        
+    def __contains__(self, fields):
+        return self.get_complete_fields(fields) in self._index_collection
+        
+        
+    def __iter__(self):
+        for fields in self._index_collection:
+            yield fields[len(self._base_key):]
+        
+        
+    def get_complete_fields(self, fields):
+        base_fields = tuple([x[0] for x in self._base_key])
+        if not isinstance(fields, tuple):
+            fields = (fields,)
+        return base_fields + fields
+        
+        
+class BaseKeyIndexProxy(object):
+    
+    def __init__(self, index, base_key, extension_fields):
+        self.index = index
+        self.base_key = base_key
+        self.extension_fields = extension_fields
+        self.make_key = functools.partial(make_key, base_key, extension_fields)
+        
+        
+    def get(self, key):
+        return self.index.get(
+            self.make_key(key)
+        )
+        
+        
+    def all(self, key):
+        return self.index.all(
+            self.make_key(key)
+        )
+        
+        
+    def count(self):
+        return self.index.cursor().count_prefix(self.make_key())
+        
+        
+    def cursor(self, reverse=False):
+        return BaseKeyIndexCursorProxy(self.index.cursor(reverse=reverse), self.base_key, self.extension_fields)
             
+            
+class BaseKeyIndexCursorProxy(object):
+    
+    def __init__(self, cursor, base_key, extension_fields):
+        self.cursor = cursor
+        self.make_key = functools.partial(make_key, base_key, extension_fields)
+        
+        
+    def first(self):
+        try:
+            self.cursor.prefix(self.make_key()).next()
+        except StopIteration:
+            pass
+            
+            
+    def last(self):
+        old_reverse = self.cursor.reverse
+        self.cursor.reverse = True
+        result = self.first()
+        self.cursor.reverse = old_reverse
+        return result
+        
+        
+    def __iter__(self):
+        return self.cursor.prefix(self.make_key())
+        
+        
+    def range(self, start=None, end=None):
+        start, end = [self.make_key(k) if k is not None else None for k in (start, end)]
+        return self.cursor(start, end)
+        
+        
+    def prefix(self, key):
+        return self.cursor.prefix(self.make_key(key))
+        
+        
+    def key(self, key):
+        return self.cursor.key(self.make_key(key))
+        
+        
+    def count_prefix(self, key):
+        return self.cursor.count_prefix(self.make_key(key))
+        
+        
+    def count_key(self, key):
+        return self.cursor.count_key(self.make_key(key))
+        

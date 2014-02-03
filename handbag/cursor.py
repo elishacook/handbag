@@ -59,7 +59,7 @@ class Cursor(object):
         
         
     def count_prefix(self, prefix):
-        return self.get_count_with_iterator('match_prefix', self.dump_key(prefix))
+        return self.get_count_with_iterator('match_prefix', self.dump_prefix(prefix))
         
         
     def count_key(self, key):

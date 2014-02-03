@@ -169,3 +169,18 @@ class TestIndex(unittest.TestCase):
             doc = foos.indexes['times-one-hundred'].get({'times-one-hundred':300})
             self.assertEqual(doc['skidoo'], 3)
                     
+                    
+    def test_filter(self):
+        def greater_than_ten(doc):
+            return doc.get('skidoo', 0) > 10
+            
+        foos = self.db.foos
+        foos.indexes.add('skidoo', filter=greater_than_ten)
+        
+        with self.db.write():
+            for i in range(0,20):
+                foos.save({'skidoo':i})
+                
+        with self.db.read():
+            self.assertEqual(foos.indexes['skidoo'].count(), 9)
+            

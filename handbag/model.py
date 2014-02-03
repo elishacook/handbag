@@ -1,5 +1,7 @@
+import inspect
 from validators import Validator, GroupValidator
 from relationships import Relationship
+from index import BaseKeyIndexCollectionProxy
 
 
 def create(env):
@@ -11,42 +13,95 @@ class ModelMeta(type):
         super(ModelMeta, cls).__init__(name, bases, dict)
         
         if name != "BaseModel" and name != "Model":
-            
             cls.env.register_model(cls)
-            cls.table = cls.env.db[name]
+            cls._setup_inheritance()
+            cls._setup_indexes(dict)
+            cls._setup_relationships(dict)
+            cls.validators = inspect.getmembers(cls, lambda x: isinstance(x, Validator))
+            cls.relationships = inspect.getmembers(cls, lambda x: isinstance(x, Relationship))
+    
+    
+    def _setup_inheritance(cls):
+        genealogy = []
+        for c in cls.mro():
+            if hasattr(c, '__metaclass__') and c.__metaclass__ == ModelMeta and \
+                c.__name__ != "BaseModel" and c.__name__ != "Model":
+                genealogy.append(c)
+        
+        if len(genealogy) > 1:
+            cls._type = ':'.join([c.__name__ for c in reversed(genealogy)])
+            cls.ancestors = genealogy[1:]
+            cls.table = cls.ancestors[0].table
+        else:
+            cls._type = None
+            cls.ancestors = []
+            cls.table = cls.env.db[cls.__name__]
+        
+        
+    def _setup_indexes(cls, dict):
+        if 'indexes' in dict:
+            cls.index_definitions = dict['indexes']
+        else:
+            cls.index_definitions = []
             
-            if hasattr(cls, 'indexes'):
-                for fields in cls.indexes:
-                    if isinstance(fields, basestring):
-                        fields = (fields,)
-                    cls.table.indexes.add(*fields)
-            
+        if cls._type:
+            cls.indexes = BaseKeyIndexCollectionProxy(
+                ModelIndexCollectionAdaptor(cls, cls.table.indexes),
+                [('_type', cls._type)]
+            )
+            cls.indexes.add()
+            cls.primary_index = cls.indexes.get()
+        else:
             cls.indexes = ModelIndexCollectionAdaptor(cls, cls.table.indexes)
+            cls.primary_index = None
+        
+        for fields in cls.index_definitions:
+            if not isinstance(fields, tuple):
+                fields = (fields,)
+            if fields not in cls.indexes:
+                cls.indexes.add(*fields)
             
-            for k,v in cls.__dict__.items():
-                if isinstance(v, Relationship):
-                    v.setup(k, cls)
+        for a in cls.ancestors:
+            for fields in a.index_definitions:
+                if not isinstance(fields, tuple):
+                    fields = (fields,)
+                if fields not in cls.indexes:
+                    cls.indexes.add(*fields)
         
-            for name, inverse_rel in cls.env.backreferences.get_all(cls.__name__).items():
-                rel = inverse_rel.get_inverse()
-                setattr(cls, name, rel)
-                rel.setup(name, cls)
         
+    def _setup_relationships(cls, dict):
+        for k,v in dict.items():
+            if isinstance(v, Relationship):
+                v.setup(k, cls)
+    
+        for name, inverse_rel in cls.env.backreferences.get_all(cls.__name__).items():
+            rel = inverse_rel.get_inverse()
+            setattr(cls, name, rel) 
+            rel.setup(name, cls)
+    
     
     def get(cls, id):
-        doc = cls.table.get(id)
-        if doc:
-            doc['_dirty'] = False
-            return cls(**doc)
+        if cls.primary_index:
+            return cls.primary_index.get(id)
+        else:
+            doc = cls.table.get(id)
+            if doc:
+                doc['_dirty'] = False
+                return cls(**doc)
         
         
     def cursor(cls, reverse=False):
-        return ModelCursorAdaptor(cls, cls.table.cursor(reverse=reverse))
+        if cls.primary_index:
+            return cls.primary_index.cursor(reverse=reverse)
+        else:
+            return ModelCursorAdaptor(cls, cls.table.cursor(reverse=reverse))
         
         
     def count(cls):
-        return cls.table.count()
-
+        if cls.primary_index:
+            return cls.primary_index.count()
+        else:
+            return cls.table.count()
 
 
 class BaseModel(object):
@@ -59,13 +114,14 @@ class BaseModel(object):
         sup.__setattr__('_dirty', kwargs.pop('_dirty', True))
         sup.__setattr__('_reference_fields', {})
         
-        for k,v in self.__class__.__dict__.items():
-            if isinstance(v, Validator):
-                field_value = kwargs.get(k, v.default())
-                sup.__setattr__(k, field_value)
-            elif isinstance(v, Relationship):
-                if k in kwargs:
-                    self._reference_fields[k] = kwargs[k]
+        for k,v in self.validators:
+            field_value = kwargs.get(k, v.default())
+            sup.__setattr__(k, field_value)
+        for k,v in self.relationships:
+            if k in kwargs:
+                self._reference_fields[k] = kwargs[k]
+        
+        print self._reference_fields
         
         if 'id' in kwargs:
             sup.__setattr__('id', kwargs['id'])
@@ -122,9 +178,8 @@ class BaseModel(object):
         
         
     def remove(self):
-        for k,v in self.__class__.__dict__.items():
-            if isinstance(v, Relationship):
-                v.on_owner_remove(self)
+        for k,v in self.relationships:
+            v.on_owner_remove(self)
         self.table.remove(self.id)
         self._dirty = False
         
@@ -139,22 +194,25 @@ class BaseModel(object):
     def validate(self):
         validators = {}
         values = {}
-        for k,v in self.__class__.__dict__.items():
-            if isinstance(v, Validator):
-                validators[k] = v
-                values[k] = getattr(self, k)
+        for k,v in self.validators:
+            validators[k] = v
+            values[k] = getattr(self, k)
         group_validator = GroupValidator(**validators)
         validated = group_validator.validate(values)
         validated['id'] = self.id
         validated.update(self._reference_fields)
+        
+        if self._type:
+            validated['_type'] = self._type
+        
         return validated
         
         
     def to_dict(self):
         values = {}
-        for k,v in self.__class__.__dict__.items():
-            if isinstance(v, Validator):
-                values[k] = getattr(self, k)
+        for k,v in self.validators:
+            values[k] = getattr(self, k)
+        values['id'] = self.id
         values.update(self._reference_fields)
         return values
         
@@ -185,8 +243,13 @@ class ModelAdaptor(object):
         
     def load(self, data):
         if data:
+            if '_type' in data:
+                parts = data['_type'].split(':')
+                model = self.model.env.models[parts[-1]]
+            else:
+                model = self.model
             data['_dirty'] = False
-            return self.model(**data)
+            return model(**data)
             
             
     def adapt_function(self, fn):

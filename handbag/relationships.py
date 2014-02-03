@@ -1,3 +1,5 @@
+from index import BaseKeyIndexCollectionProxy
+
 __all__ = [
     'One',
     'OneToOne',
@@ -265,7 +267,7 @@ class Many(Relationship):
         raise NotImplementedError
         
         
-    def index_key_adaptor(self, owner):
+    def base_index_key(self, owner):
         raise NotImplementedError
 
 
@@ -274,8 +276,10 @@ class ManyProxy(object):
     def __init__(self, rel, owner):
         self._rel = rel
         self._owner = owner
-        self.indexes = ManyIndexCollection( rel.index_key_adaptor(owner) )
-        
+        self.indexes = BaseKeyIndexCollectionProxy(
+            self._rel.get_target_model().indexes,
+            self._rel.base_index_key(owner)
+        )
         
     def count(self):
         return self._rel.count(self._owner)
@@ -303,121 +307,6 @@ class ManyProxy(object):
         
     def remove(self, target):
         return self._rel.remove(self._owner, target)
-    
-    
-class ManyIndexCollection(object):
-    
-    def __init__(self, adaptor):
-        self.adaptor = adaptor
-        
-        
-    def __getitem__(self, fields):
-        return ManyIndex(self.adaptor, fields)
-    
-    
-class ManyIndex(object):
-    
-    def __init__(self, adaptor, fields):
-        self.adaptor = adaptor
-        self.index = self.adaptor.get_index(fields)
-        
-        
-    def get(self, key):
-        return self.index.get(
-            self.adaptor.make_key(self.index, key)
-        )
-        
-        
-    def all(self, key):
-        return self.index.all(
-            self.adaptor.make_key(self.index, key)
-        )
-        
-        
-    def count(self):
-        return self.index.cursor().count_range(start=self.adaptor.make_key(self.index))
-        
-        
-    def cursor(self, reverse=False):
-        return ManyCursor(self.adaptor, self.index, self.index.cursor())
-        
-        
-class ManyIndexKeyAdaptor(object):
-    
-    def __init__(self, rel, owner, reference_field_name):
-        self.rel = rel
-        self.owner = owner
-        self.reference_field_name = reference_field_name
-        
-        
-    def make_key(self, index, key=None):
-        if key is None:
-            key = {}
-        if isinstance(key, dict):
-            key[self.reference_field_name] = self.owner.id
-        else:
-            key = {
-                self.reference_field_name: self.owner.id,
-                index.get_fields().names[1]: key
-            }
-        return key
-        
-        
-    def get_index(self, fields):
-        if isinstance(fields, tuple):
-            complete_fields = (self.reference_field_name,) + fields
-        else:
-            complete_fields = (self.reference_field_name, fields)
-            
-        return self.rel.get_target_model().indexes[complete_fields]
-        
-        
-class ManyCursor(object):
-    
-    def __init__(self, adaptor, index, cursor):
-        self.adaptor = adaptor
-        self.index = index
-        self.cursor = cursor
-        
-        
-    def first(self):
-        try:
-            self.cursor.prefix(self.adaptor.make_key(self.index)).next()
-        except StopIteration:
-            pass
-            
-            
-    def last(self):
-        old_reverse = self.cursor.reverse
-        self.cursor.reverse = True
-        result = self.first()
-        self.cursor.reverse = old_reverse
-        return result
-        
-        
-    def __iter__(self):
-        return self.cursor.prefix(self.adaptor.make_key(self.index))
-        
-        
-    def range(self, start=None, end=None):
-        start, end = [self.adaptor.make_key(self.index, k) if k is not None else None for k in (start, end)]
-        return self.cursor(start, end)
-        
-        
-    def prefix(self, key):
-        return self.cursor.prefix(self.adaptor.make_key(self.index, key))
-        
-        
-    def key(self, key):
-        return self.cursor.key(self.adaptor.make_key(self.index, key))
-        
-        
-    def count_prefix(self, key):
-        return self.cursor.count_prefix(self.adaptor.make_key(self.index, key))
-        
-        
-    def count_key(self, key):
-        return self.cursor.count_key(self.adaptor.make_key(self.index, key))
     
     
 class OneToMany(Many):
@@ -466,8 +355,8 @@ class OneToMany(Many):
             return False
             
             
-    def index_key_adaptor(self, owner):
-        return ManyIndexKeyAdaptor(self, owner, self._inverse_name)
+    def base_index_key(self, owner):
+        return [(self._inverse_name, owner.id)]
 
     
 class ManyToMany(Many):
@@ -548,8 +437,8 @@ class ManyToMany(Many):
             return False
         
         
-    def index_key_adaptor(self, owner):
-        return ManyIndexKeyAdaptor(self, owner, self.full_name)
+    def base_index_key(self, owner):
+        return [(self.full_name, owner.id)]
         
         
     def make_join_doc(self, owner, target):

@@ -221,3 +221,54 @@ class TestModel(unittest.TestCase):
         with self.env.read():
             self.assertEquals(Foo.count(), 10)
             
+            
+    def test_simple_inheritance(self):
+        class Foo(self.env.Model):
+            pass
+            
+        class Bar(Foo):
+            pass
+        
+        with self.env.write():
+            for i in range(0,10):
+                f = Foo()
+            for i in range(0,7):
+                b = Bar()
+        
+        with self.env.read():
+            self.assertEquals(Foo.count(), 17)
+            self.assertEquals(Bar.count(), 7)
+            
+            class_names = set()
+            for inst in Foo.cursor():
+                class_names.add(inst.__class__.__name__)
+            self.assertEquals(len(class_names), 2)
+            
+            for b in Bar.cursor():
+                self.assertEquals(b.__class__.__name__, 'Bar')
+                
+                
+    def test_inherited_indexes(self):
+        class Foo(self.env.Model):
+            skidoo = TypeOf(int)
+            indexes = ['skidoo']
+            
+        class Bar(Foo):
+            pass
+            
+        with self.env.write():
+            for i in range(0,7):
+                f = Foo(skidoo=i)
+            for i in range(7,10):
+                b = Bar(skidoo=i)
+                
+        with self.env.read():
+            self.assertEquals(Foo.indexes['skidoo'].count(), 10)
+            self.assertEquals(Bar.indexes['skidoo'].count(), 3)
+            f = Foo.indexes['skidoo'].get(3)
+            self.assertEquals(f.__class__.__name__, 'Foo')
+            b = Foo.indexes['skidoo'].get(7)
+            self.assertEquals(b.__class__.__name__, 'Bar')
+            b = Bar.indexes['skidoo'].get(3)
+            self.assertEquals(b, None)
+            
