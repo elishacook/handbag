@@ -74,17 +74,17 @@ class EnvironmentContext(object):
         
         
     def enqueue(self, inst):
-        if inst.is_dirty():
-            assert self.writable, "Transaction is read-only"
-        if inst.id not in self.queue:
-            if len(self.queue) > self.max_queue_size:
-                self.flush()
-            self.queue[inst.id] = inst
+        if self.writable:
+            if inst.id not in self.queue:
+                if len(self.queue) > self.max_queue_size:
+                    self.flush()
+                self.queue[inst.id] = inst
+        elif inst.is_dirty():
+            raise AssertionError, "A writable transaction is required."
         
         
     def flush(self):
         if len(self.queue) > 0:
-            assert self.writable, "Transaction is read-only"
             for inst in self.queue.values():
                 inst.save()
                 
