@@ -386,17 +386,20 @@ class BaseKeyIndexCursorProxy(object):
         
     def first(self):
         try:
-            self.cursor.prefix(self.make_key()).next()
+            return self.cursor.prefix(self.make_key()).next()
         except StopIteration:
             pass
             
             
     def last(self):
-        old_reverse = self.cursor.reverse
-        self.cursor.reverse = True
-        result = self.first()
-        self.cursor.reverse = old_reverse
-        return result
+        try:
+            old_reverse = self.cursor.get_reverse()
+            self.cursor.set_reverse(not old_reverse)
+            result = self.cursor.prefix(self.make_key()).next()
+            self.cursor.set_reverse(old_reverse)
+            return result
+        except StopIteration:
+            pass
         
         
     def __iter__(self):

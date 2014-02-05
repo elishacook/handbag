@@ -9,6 +9,14 @@ class Cursor(object):
         self.reverse = reverse
         
         
+    def get_reverse(self):
+        return self.reverse
+        
+        
+    def set_reverse(self, reverse):
+        self.reverse = reverse
+        
+        
     def first(self):
         cursor = self._create_cursor()
         if self.reverse:
@@ -147,14 +155,8 @@ def iter_match_prefix(cursor, prefix):
     
     
 def iter_match_prefix_reverse(cursor, prefix):
-    last_char = ord(prefix[-1])
-    if last_char < 255:
-        prefix_bound = prefix[:-1] + chr(last_char + 1)
-    else:
-        prefix_bound = prefix + '\x00'
-        
-    cursor.jump(prefix_bound)
-    cursor.prev()
+    for r in iter_match_prefix(cursor, prefix):
+        pass
     
     return iter_while(
         cursor.iterprev(), 
