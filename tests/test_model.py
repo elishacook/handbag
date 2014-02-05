@@ -231,21 +231,28 @@ class TestModel(unittest.TestCase):
         
         with self.env.write():
             for i in range(0,10):
-                f = Foo()
-            for i in range(0,7):
-                b = Bar()
+                f = Foo(id=i)
+            for i in range(10,17):
+                b = Bar(id=i)
         
         with self.env.read():
             self.assertEquals(Foo.count(), 17)
             self.assertEquals(Bar.count(), 7)
             
-            class_names = set()
             for inst in Foo.cursor():
-                class_names.add(inst.__class__.__name__)
-            self.assertEquals(len(class_names), 2)
+                self.assertIsInstance(inst, (Foo, Bar))
             
             for b in Bar.cursor():
-                self.assertEquals(b.__class__.__name__, 'Bar')
+                self.assertIsInstance(b, Bar)
+                
+            b = Foo.get(15)
+            self.assertIsInstance(b, Bar)
+            
+            b = Bar.get(15)
+            self.assertIsInstance(b, Bar)
+            
+            f = Foo.get(3)
+            self.assertIsInstance(f, Foo)
                 
                 
     def test_inherited_indexes(self):

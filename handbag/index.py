@@ -300,10 +300,13 @@ def make_key(base_key, extension_fields, key=None):
     if isinstance(key, dict):
         key.update(dict(base_key))
     else:
-        key = {
-            extension_fields[0]: key
-        }
-        key.update(base_key)
+        if len(extension_fields) > 0:
+            key = {
+                extension_fields[0]: key
+            }
+            key.update(base_key)
+        else:
+            key = dict(base_key)
     return key
 
 

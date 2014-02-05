@@ -85,10 +85,7 @@ class ModelMeta(type):
         if cls.primary_index:
             return cls.primary_index.get(id)
         else:
-            doc = cls.table.get(id)
-            if doc:
-                doc['_dirty'] = False
-                return cls(**doc)
+            return cls.load(cls.table.get(id))
         
         
     def cursor(cls, reverse=False):
@@ -103,6 +100,17 @@ class ModelMeta(type):
             return cls.primary_index.count()
         else:
             return cls.table.count()
+            
+            
+    def load(cls, data):
+        if data:
+            if '_type' in data:
+                parts = data['_type'].split(':')
+                model = cls.env.models[parts[-1]]
+            else:
+                model = cls
+            data['_dirty'] = False
+            return model(**data)
 
 
 class BaseModel(object):
@@ -238,24 +246,13 @@ class ModelAdaptor(object):
         
     def __getattr__(self, name):
         return getattr(self.adapted, name)
-        
-        
-    def load(self, data):
-        if data:
-            if '_type' in data:
-                parts = data['_type'].split(':')
-                model = self.model.env.models[parts[-1]]
-            else:
-                model = self.model
-            data['_dirty'] = False
-            return model(**data)
             
             
     def adapt_function(self, fn):
         @wraps(fn)
         def wrapper(*args, **kwargs):
             data = fn(*args, **kwargs)
-            return self.load(data)
+            return self.model.load(data)
         return wrapper
         
         
@@ -263,7 +260,7 @@ class ModelAdaptor(object):
         @wraps(fn)
         def wrapper(*args, **kwargs):
             for data in fn(*args, **kwargs):
-                yield self.load(data)
+                yield self.model.load(data)
         return wrapper
     
     
@@ -273,7 +270,7 @@ class ModelCursorAdaptor(ModelAdaptor):
     
     def __iter__(self):
         for data in self.adapted:
-            yield self.load(data)
+            yield self.model.load(data)
     
     
 class ModelIndexAdaptor(ModelAdaptor):
