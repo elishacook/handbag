@@ -7,22 +7,21 @@ class ModelInstanceRegistry(object):
     
     def __init__(self):
         self._local = threading.local()
-        self._local.instances = {}
         
         
     def add(self, inst):
         id = unicode(inst.id)
         callback = partial(self._remove_model_inst_ref, id)
         ref = weakref.ref(inst, callback)
-        if id not in self._local.instances:
-            self._local.instances[id] = [ref]
+        if id not in self._get_local_instances():
+            self._get_local_instances()[id] = [ref]
         else:
-            self._local.instances[id].append(ref)
+            self._get_local_instances()[id].append(ref)
         
         
     def __getitem__(self, id):
         id = unicode(id)
-        refs = self._local.instances.get(id, [])
+        refs = self._get_local_instances().get(id, [])
         insts = []
         for r in refs:
             inst = r()
@@ -32,30 +31,35 @@ class ModelInstanceRegistry(object):
         
         
     def __delitem__(self, id, r):
-        refs = self._local.instances.get(id)
+        refs = self._get_local_instances().get(id)
         if refs:
             try:
                 refs.remove(r)
             except ValueError:
                 pass
             if len(refs) == 0:
-                self._local.instances.pop(id)
+                self._get_local_instances().pop(id)
     
     
     def clear(self):
         self._local = threading.local()
-        self._local.instances = {}
         
         
     def _remove_model_inst_ref(self, id, r):
-        refs = self._local.instances.get(id)
+        refs = self._get_local_instances().get(id)
         if refs:
             try:
                 refs.remove(r)
             except ValueError:
                 pass
             if len(refs) == 0:
-                self._local.instances.pop(id)
+                self._get_local_instances().pop(id)
+                
+                
+    def _get_local_instances(self):
+        if not hasattr(self._local, 'instances'):
+            self._local.instances = {}
+        return self._local.instances
     
     
     
