@@ -42,9 +42,8 @@ _type_by_magic = {
     '\x05': "binary",
     '\x06': "bool",
     '\x07': "datetime",
-    '\x08': "int32",
-    '\x09': "int64",
-    '\x0A': "none"
+    '\x08': "int",
+    '\x09': "none"
 }
 
 
@@ -70,13 +69,8 @@ def dumpone(value):
         type_name = 'bool'
     elif isinstance(value, datetime):
         type_name = 'datetime'
-    elif isinstance(value, int):
-        if value < -0x80000000 or value > 0x7fffffff:
-            type_name = 'int64'
-        else:
-            type_name = 'int32'
-    elif isinstance(value, long):
-        type_name = 'int64'
+    elif isinstance(value, (int,long)):
+        type_name = 'int'
     elif value is None:
         type_name = 'none'
     elif isinstance(value, dict):
@@ -123,13 +117,8 @@ def encode(value, stream):
         type_name = 'bool'
     elif isinstance(value, datetime):
         type_name = 'datetime'
-    elif isinstance(value, int):
-        if value < -0x80000000 or value > 0x7fffffff:
-            type_name = 'int64'
-        else:
-            type_name = 'int32'
-    elif isinstance(value, long):
-        type_name = 'int64'
+    elif isinstance(value, (int, long)):
+        type_name = 'int'
     elif value is None:
         type_name = 'none'
         
@@ -238,19 +227,11 @@ def decode_datetime(bytes):
     return datetime.fromtimestamp(ms / 1000.0, pytz.utc)
     
     
-def encode_int32(value):
-    return struct.pack('>i', value)
-    
-    
-def decode_int32(bytes):
-    return struct.unpack('>i', bytes)[0]
-    
-    
-def encode_int64(value):
+def encode_int(value):
     return struct.pack('>q', value)
     
     
-def decode_int64(bytes):
+def decode_int(bytes):
     return struct.unpack('>q', bytes)[0]
     
     
