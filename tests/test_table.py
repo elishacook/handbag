@@ -1,6 +1,7 @@
 import unittest
 import os.path
 import shutil
+import threading
 from handbag import database
 
 TEST_PATH = "/tmp/handbag-test.db"
@@ -79,3 +80,20 @@ class TestTable(unittest.TestCase):
         with self.db.read():
             self.assertEqual(foos.count(), 11)
         
+        
+    def test_table_threads(self):
+        foos = self.db.foos
+        
+        def add_one():
+            with self.db.write():
+                foos.save({'foo':'bar'})
+        
+        t1 = threading.Thread(target=add_one)
+        t2 = threading.Thread(target=add_one)
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+        
+        with self.db.read():
+            self.assertEqual(foos.count(), 2)
