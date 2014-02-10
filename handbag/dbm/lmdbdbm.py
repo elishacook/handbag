@@ -41,6 +41,10 @@ class LMDBDBM(AbstractDBM):
         txn.abort()
         
         
+    def in_transaction(self):
+        return len(self._get_local_transactions()) > 0
+        
+        
     def is_transaction_writable(self):
         self._require_transaction()
         return self._get_local_transactions()[-1][0]
@@ -97,7 +101,7 @@ class LMDBDBM(AbstractDBM):
         
         
     def _require_transaction(self):
-        assert len(self._get_local_transactions()) > 0, "An active transaction is required"
+        assert self.in_transaction(), "An active transaction is required"
         
         
     def _get_env(self):

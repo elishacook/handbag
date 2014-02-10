@@ -57,13 +57,19 @@ class DatabaseContext(object):
     def __init__(self, dbm, writable=False):
         self.dbm = dbm
         self.writable = writable
+        self.is_dummy = False
         
         
     def __enter__(self):
+        if self.dbm.in_transaction() and not self.dbm.is_transaction_writable():
+            self.is_dummy = True
+            return
         self.dbm.transaction_start(writable=self.writable)
         
         
     def __exit__(self, type, value, exception):
+        if self.is_dummy:
+            return
         if value:
             self.dbm.transaction_abort()
         else:
