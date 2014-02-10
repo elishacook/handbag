@@ -28,11 +28,31 @@ class TestRelationships(unittest.TestCase):
             foo = Foo()
             bar = Bar()
             foo.bar = bar
-            self.assertEquals(foo.bar, bar)
             
         with self.env.read():
+            self.assertEquals(foo.bar, bar)
             foo = Foo.get(foo.id)
             self.assertEquals(foo.bar, bar)
+            
+            
+    def test_one_instance_specific_target(self):
+        class Foo(self.env.Model):
+            bar = One("Bar")
+            
+        class Bar(self.env.Model):
+            pass
+            
+        with self.env.write():
+            foo1 = Foo()
+            bar1 = Bar()
+            foo1.bar = bar1
+            foo2 = Foo()
+            bar2 = Bar()
+            foo2.bar = bar2
+        
+        with self.env.read():
+            self.assertEquals(foo1.bar, bar1)
+            self.assertEquals(foo2.bar, bar2)
         
       
     def test_one_no_inverse(self):

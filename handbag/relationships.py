@@ -168,18 +168,12 @@ class One(Relationship):
         
         
     def get(self, owner):
-        if not hasattr(self, '_cache'):
-            id = owner.get_reference_field(self.name)
-            if id:
-                self._cache = self.get_target_model().get(id)
-            else:
-                self._cache = None
-        return self._cache
+        id = owner.get_reference_field(self.name)
+        if id:
+            return self.get_target_model().get(id)
         
         
     def set(self, owner, target, update_inverse=True):
-        self._cache = target
-        
         for obj in self.env.instances[owner.id]:
             obj.set_reference_field(self.name, target.id)
         
