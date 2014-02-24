@@ -184,3 +184,20 @@ class TestIndex(unittest.TestCase):
         with self.db.read():
             self.assertEqual(foos.indexes['skidoo'].count(), 9)
             
+            
+    def test_reverse_cursor(self):
+        foos = self.db.foos
+        foos.indexes.add('skidoo')
+        
+        with self.db.write():
+            for i in range(0,20):
+                foos.save({'skidoo':i})
+        
+        results = range(0,20)
+        
+        with self.db.read():
+            self.assertEqual(results, [foo['skidoo'] for foo in foos.cursor()])
+            results.reverse()
+            self.assertEqual(results, [foo['skidoo'] for foo in foos.cursor(reverse=True)])
+            self.assertEqual(19, foos.cursor(reverse=True).first()['skidoo'])
+            

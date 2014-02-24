@@ -158,6 +158,9 @@ def iter_match_prefix_reverse(cursor, prefix):
     for r in iter_match_prefix(cursor, prefix):
         pass
     
+    if cursor.key():
+        cursor.prev()
+    
     return iter_while(
         cursor.iterprev(), 
         lambda x: x.startswith(prefix)
