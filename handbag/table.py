@@ -37,6 +37,7 @@ class Table(object):
         
     def remove_all(self):
         assert self.dbm.is_transaction_writable(), "Transaction is read-only"
+        self.indexes.remove_all()
         self.dbm.delete_all(self.name)
         
         

@@ -99,6 +99,11 @@ class IndexCollection(object):
             index.remove(doc)
             
             
+    def remove_all(self):
+        for index in self.indexes.values():
+            index.remove_all()
+            
+            
     def sync(self):
         self.dbm.transaction_start(writable=False)
         try:
@@ -198,9 +203,13 @@ class Index(object):
         
         
     def remove(self, doc):
-        key = self.get_key(doc)
-        value = dson.dumpone(doc['id'])
-        self.dbm.delete(self.name, key, value=value)
+        try:
+            key = self.get_key(doc)
+        except:
+            return
+        else:
+            value = dson.dumpone(doc['id'])
+            self.dbm.delete(self.name, key, value=value)
         
         
     def remove_all(self):
