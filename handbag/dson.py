@@ -160,7 +160,7 @@ def decode(stream):
 def read_type(stream):
     magic = stream.read(1)
     if not magic:
-        raise StopDecoding
+        raise StopDecoding, "No magic number for the empty string"
     if magic == '\x00':
         raise StopDecoding
     type_name = _type_by_magic.get(magic)
