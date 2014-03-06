@@ -101,3 +101,9 @@ class TestCursor(unittest.TestCase):
             records = list(self.table.cursor(reverse=True).key('04'))
             self.assertEqual(records, self.records[4:5])
             
+            
+    def test_random(self):
+        with self.db.read():
+            records = list(self.table.cursor().random())
+            self.assertNotEqual(records, self.records)
+            

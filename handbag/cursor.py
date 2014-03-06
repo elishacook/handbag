@@ -1,4 +1,6 @@
 import dson
+import random
+import math
 
 
 class Cursor(object):
@@ -7,6 +9,49 @@ class Cursor(object):
         self.dbm = dbm
         self.name = name
         self.reverse = reverse
+        self._cursor = None
+        
+        
+    def next(self):
+        if not self._cursor:
+            self._cursor = self._create_cursor()
+        if self._cursor.next():
+            return self.load(self._cursor.value())
+        
+        
+    def prev(self):
+        if not self._cursor:
+            return
+        if self._cursor.prev():
+            return self.load(self._cursor.value())
+        
+        
+    def jump(self, key):
+        if not self._cursor:
+            self._cursor = self._create_cursor()
+        self._cursor.jump(self.dump_key(key))
+        
+        
+    def random(self):
+        cursor = self._create_cursor()
+        cursor.first()
+        num_entries = self.dbm.count(self.name)
+        current_index = 0
+        indexes = range(0, num_entries)
+        random.shuffle(indexes)
+        
+        while len(indexes) > 0:
+            i = indexes.pop()
+            
+            if i > current_index:
+                for x in range(0, i - current_index):
+                    cursor.next()
+            elif i < current_index:
+                for x in range(0, current_index - i):
+                    cursor.prev()
+            current_index = i
+            
+            yield self.load(cursor.value())
         
         
     def get_reverse(self):
@@ -191,7 +236,7 @@ def iter_while(iterator, predicate):
             yield key, value
         else:
             break
-            
+
             
 iterators = {
     'all': (iter_all, iter_all_reverse),
