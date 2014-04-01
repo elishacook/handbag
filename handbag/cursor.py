@@ -87,7 +87,7 @@ class Cursor(object):
     def range(self, start=None, end=None):
         if start is None and end is None:
             return self.__iter__()
-            
+        
         return self.get_iterator(
             'range',
             start if start is None else self.dump_key(start),
@@ -166,7 +166,8 @@ def iter_range(cursor, start, end):
     if start is None:
         cursor.first()
     else:
-        cursor.jump(start)
+        if not cursor.jump(start):
+            return ()
     if end:
         return iter_while(
             cursor.iternext(),

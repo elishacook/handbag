@@ -1,6 +1,7 @@
 import unittest
 import os.path
 import shutil
+from datetime import datetime, timedelta
 from handbag import database
 
 TEST_PATH = "/tmp/handbag-test.db"
@@ -14,6 +15,7 @@ class TestCursor(unittest.TestCase):
             shutil.rmtree(TEST_PATH)
         self.db = database.open(TEST_URL)
         self.table = self.db.foo
+        self.empty_table = self.db.bar
         self.records = []
         
         with self.db.write():
@@ -50,6 +52,30 @@ class TestCursor(unittest.TestCase):
         with self.db.read():
             records = list(self.table.cursor().range('03','07'))
             self.assertEqual(records, self.records[3:7])
+            
+    
+    def test_out_of_range(self):
+        with self.db.read():
+            records = list(self.table.cursor().range('30'))
+            self.assertEqual(records, [])
+            
+            
+    def test_date_range(self):
+        table = self.empty_table
+        now = datetime.now()
+        before_now = now - timedelta(days=1)
+        after_now = now + timedelta(days=1)
+        way_after_now = now + timedelta(days=30)
+        
+        with self.db.write():
+            table.save({ 'id': before_now })
+            table.save({ 'id': after_now })
+        
+        with self.db.read():
+            results = list(table.cursor().range(start=now))
+            self.assertEqual(len(results), 1)
+            results = list(table.cursor().range(start=way_after_now))
+            self.assertEqual(len(results), 0)
             
             
     def test_prefix(self):

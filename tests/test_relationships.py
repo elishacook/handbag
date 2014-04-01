@@ -412,7 +412,10 @@ class TestRelationships(unittest.TestCase):
         with self.env.read():
             results = foo.bars.indexes['skidoo'].cursor().range(start='a',end='b')
             self.assertEquals(['a'] * 7, [b.skidoo for b in results])
-                
+            
+        with self.env.read():
+            results = foo.bars.indexes['skidoo'].cursor().range(start='c')
+            self.assertEquals([], list(results))
         
 if __name__ == "__main__":
     unittest.main()
