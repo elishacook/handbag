@@ -395,6 +395,24 @@ class TestRelationships(unittest.TestCase):
             class Bar(self.env.Model):
                 foo = OneToMany(Foo)
                 
+                
+    def test_adapted_index(self):
+        class Foo(self.env.Model):
+            bars = OneToMany("Bar", indexes=['skidoo'])
+            
+        class Bar(self.env.Model):
+            skidoo = Text()
+            
+        with self.env.write():
+            foo = Foo()
+            for i in range(0,10):
+                b = Bar(skidoo=('a' if i < 7 else 'c'))
+                foo.bars.add(b)
+                
+        with self.env.read():
+            results = foo.bars.indexes['skidoo'].cursor().range(start='a',end='b')
+            self.assertEquals(['a'] * 7, [b.skidoo for b in results])
+                
         
 if __name__ == "__main__":
     unittest.main()

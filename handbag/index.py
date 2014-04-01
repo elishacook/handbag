@@ -417,7 +417,7 @@ class BaseKeyIndexCursorProxy(object):
         
     def range(self, start=None, end=None):
         start, end = [self.make_key(k) if k is not None else None for k in (start, end)]
-        return self.cursor(start, end)
+        return self.cursor.range(start, end)
         
         
     def prefix(self, key):
